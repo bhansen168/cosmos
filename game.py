@@ -1,0 +1,22 @@
+class Game:
+    EMPTY = 0
+    WHITE = 1
+    BLACK = 2
+    
+    def __init__(self,side=8):
+        self.side = side
+        self.board = [[0 for _ in range(side)] for _ in range(side)]
+        #set middle squares
+
+        self._set_middle()
+
+    def _set_middle(self):
+        self.board[3][3] = Game.WHITE
+        self.board[4][4] = Game.WHITE
+        self.board[3][4] = Game.BLACK
+        self.board[4][3] = Game.BLACK
+
+
+        
+        
+        
