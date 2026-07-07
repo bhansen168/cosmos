@@ -1,2 +1,4 @@
 # cosmos
-COSMOS project
+
+COSMOS project -- Reversi / Othello
+
