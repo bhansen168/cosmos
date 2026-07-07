@@ -1,6 +1,5 @@
 import random,sys,os,math,time,copy,subprocess,warnings
 warnings.filterwarnings("ignore")
-sys.path.extend(["D:/importPython","C:/Users/synco/AppData/Roaming/Python/Python310/site-packages"])
 
 def read(fileName):
     file=open(fileName,"r")
