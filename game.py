@@ -5,8 +5,8 @@ import pygame
 
 class Game:
     EMPTY = 0
-    WHITE = 1 #piece
-    BLACK = 2
+    WHITE = 2 #piece
+    BLACK = 1
 
     C_BLACK = (0,0,0)
     C_WHITE = (255,255,255)
@@ -32,7 +32,12 @@ class Game:
 
     def get_square_clicked(self,mx,my):
         TX,TY = Game.TOP_LEFT
-        return ((mx-TX)//Game.SQUARE,(my-TY)//Game.SQUARE)
+        outX =(mx-TX)//Game.SQUARE
+        outY =(my-TY)//Game.SQUARE
+
+        if self.valid(outX,outY):
+            return (outX,outY)
+        return None
 
     def draw_board(self,screen):
         TX,TY = Game.TOP_LEFT
@@ -83,6 +88,14 @@ class Game:
             self.board[y][x] = Game.WHITE
         elif self.board[y][x] == Game.WHITE:
             self.board[y][x] = Game.BLACK
+
+    def get_score(self):
+        out = {Game.BLACK:0,Game.WHITE:0}
+        for y in range(self.side):
+            for x in range(self.side):
+                if self.board[y][x]!= Game.EMPTY:
+                    out[self.board[y][x]]+=1
+        return out
                         
                     
         
@@ -98,6 +111,8 @@ class Game:
             self.board[y][x] = color
             for x,y in toChange:
                 self.flip_piece(x,y)
+            return True
+        return False
             
     
         

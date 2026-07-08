@@ -25,9 +25,34 @@ class Main:
         self.height = 800
 
         self.game = Game(side)
+ 
+        self.activePlayerIndex = 0 #for active player index, 0 is black and 1 is white; add 1 to get real value
+
+        self.font = pygame.font.SysFont("Comic Sans",20)
+
+
+    def blit_turn(self,screen):
+        text = self.font.render(("Black's" if self.activePlayerIndex+1 == Game.BLACK else "White's")+" Turn",True,Main.WHITE)
+
+        screen.blit(text,(self.width-150,25))
+
+    def draw_score(self,screen,x,y): #top left
+        score = self.game.get_score()
+
+
+        texts = ["Scores:",f"Black: {score[Game.BLACK]}",f"White: {score[Game.WHITE]}"]
+        for i in range(len(texts)):#text in texts:
+            surf = self.font.render(texts[i],True,Main.WHITE)
+            screen.blit(surf,(x,y + i * 30))
+        
 
     def draw(self,screen):
         self.game.draw_board(screen)
+
+        self.blit_turn(screen)
+
+        self.draw_score(screen,self.width-150,80)
+
         
 
     def main(self):
@@ -44,7 +69,12 @@ class Main:
                     pass
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     mx,my = pygame.mouse.get_pos()
-                    print(self.game.get_square_clicked(mx,my))
+                    sq = self.game.get_square_clicked(mx,my)
+                    if sq is not None:
+                        x,y = sq
+                        successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
+                        if successful:
+                            self.activePlayerIndex = (self.activePlayerIndex+1)%2
             
             screen.fill(Main.GREEN)
             self.draw(screen)
