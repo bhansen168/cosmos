@@ -114,7 +114,7 @@ class Main:
 
         score = self.game.get_score()
 
-        print(f"Game over!\nFinal scores: Black: {score[Game.BLACK]}",f"White: {score[Game.WHITE]}")
+        print(f"Game over!\nFinal scores: \nBlack: {score[Game.BLACK]}\nWhite: {score[Game.WHITE]}")
         
 if __name__ == "__main__":
     m = Main()
