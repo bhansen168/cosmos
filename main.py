@@ -60,7 +60,7 @@ class Main:
 
         pygame.display.set_caption("COSMOS - Othello")
 
-        while self.running:
+        while not self.game.check_game_over():
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
@@ -81,6 +81,10 @@ class Main:
             pygame.display.flip()
 
         pygame.quit()
+
+        score = self.game.get_score()
+
+        print(f"Game over!\nFinal scores: Black: {score[Game.BLACK]}",f"White: {score[Game.WHITE]}")
         
 if __name__ == "__main__":
     m = Main()

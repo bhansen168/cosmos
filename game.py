@@ -40,6 +40,13 @@ class Game:
             return (outX,outY)
         return None
 
+    def check_game_over(self):
+        found = {Game.EMPTY:False,Game.WHITE:False,Game.BLACK:False}
+        for y in range(self.side):
+            for x in range(self.side):
+                found[self.board[y][x]] = True
+        return (False in list(found.values()))
+
     def draw_board(self,screen):
         TX,TY = Game.TOP_LEFT
 
@@ -82,7 +89,7 @@ class Game:
                         x1 += dx
                         y1 += dy
 
-                    if self.is_yours(x1,y1,color): #not out of bounds
+                    if self.valid(x1,y1) and self.is_yours(x1,y1,color): #not out of bounds
                         flip.extend(visited)
         return flip
 
