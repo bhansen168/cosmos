@@ -21,8 +21,8 @@ class Main:
     def __init__(self,side=8):
         self.running = True
 
-        self.width = 1200
-        self.height = 800
+        self.width = 800
+        self.height = 600
 
         self.game = Game(side)
  
@@ -72,7 +72,10 @@ class Main:
                     self.running = False
                 elif event.type == pygame.KEYDOWN:
                     #if event.key == pygame.K_SPACE:
-                    pass
+                    if event.key == pygame.K_p:
+                        print(self.game.get_all_legal_moves(self.activePlayerIndex+1))
+        
+                
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     mx,my = pygame.mouse.get_pos()
                     sq = self.game.get_square_clicked(mx,my)
@@ -81,6 +84,9 @@ class Main:
                         successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
                         if successful:
                             self.next_turn()
+                            if len(self.game.get_all_legal_moves(self.activePlayerIndex+1)) == 0:
+                                #game over
+                                self.game.no_legal_moves = True
             
             screen.fill(Main.WHITE)
             self.draw(screen)

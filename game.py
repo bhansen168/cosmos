@@ -23,6 +23,8 @@ class Game:
         self.board = [[0 for _ in range(side)] for _ in range(side)]
         #set middle squares
 
+        self.game.no_legal_moves = False
+
         self._set_middle()
 
     def _set_middle(self):
@@ -45,7 +47,7 @@ class Game:
         for y in range(self.side):
             for x in range(self.side):
                 found[self.board[y][x]] = True
-        return (False in list(found.values()))
+        return (False in list(found.values()) or self.no_legal_moves)
 
     def draw_board(self,screen):
         TX,TY = Game.TOP_LEFT
