@@ -10,6 +10,8 @@ os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
 pygame.init()
 
+from datetime import datetime,timedelta
+
 sys.path.append(os.getcwd())
 from game import Game
 
@@ -29,6 +31,9 @@ class Main:
         self.activePlayerIndex = 0 #for active player index, 0 is black and 1 is white; add 1 to get real value
 
         self.font = pygame.font.SysFont("Comic Sans",20)
+        self.bigFont = pygame.font.SysFont("Comic Sans",40)
+
+        self.close_timeout = None
 
 
     def blit_turn(self,screen):
@@ -53,6 +58,12 @@ class Main:
 
         self.draw_score(screen,self.width-150,80)
 
+        if self.close_timeout is not None:
+            text = self.bigFont.render("GAME OVER",True,Main.WHITE)
+            rect = text.get_rect()
+            rect.center = (self.width/2,self.height/2)
+            screen.blit(text,rect)
+
     def next_turn(self):
         self.activePlayerIndex = (self.activePlayerIndex+1)%2
         if len(self.game.get_all_legal_moves(self.activePlayerIndex+1))== 0: #forfeit turn
@@ -66,31 +77,38 @@ class Main:
 
         pygame.display.set_caption("COSMOS - Othello")
 
-        while not self.game.check_game_over():
+        while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
                 elif event.type == pygame.KEYDOWN:
-                    #if event.key == pygame.K_SPACE:
-                    if event.key == pygame.K_p:
-                        print(self.game.get_all_legal_moves(self.activePlayerIndex+1))
+                    pass
         
                 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    mx,my = pygame.mouse.get_pos()
-                    sq = self.game.get_square_clicked(mx,my)
-                    if sq is not None:
-                        x,y = sq
-                        successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
-                        if successful:
-                            self.next_turn()
-                            if len(self.game.get_all_legal_moves(self.activePlayerIndex+1)) == 0:
-                                #game over
-                                self.game.no_legal_moves = True
+                    if self.close_timeout is None:
+                        mx,my = pygame.mouse.get_pos()
+                        sq = self.game.get_square_clicked(mx,my)
+                        if sq is not None:
+                            x,y = sq
+                            successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
+                            if successful:
+                                self.next_turn()
+                                if len(self.game.get_all_legal_moves(self.activePlayerIndex+1)) == 0:
+                                    #game over
+                                    self.game.no_legal_moves = True
+
+                                if self.game.check_game_over():
+                                    self.close_timeout = datetime.now()
+
+                            
             
             screen.fill(Main.WHITE)
             self.draw(screen)
             pygame.display.flip()
+
+            if self.close_timeout is not None and (datetime.now() - self.close_timeout).total_seconds()>=5:
+                self.running = False
 
         pygame.quit()
 
