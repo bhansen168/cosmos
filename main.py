@@ -28,11 +28,12 @@ class Main:
 
     def draw(self,screen):
         self.game.draw_board(screen)
+        
 
     def main(self):
         screen = pygame.display.set_mode((self.width,self.height))
 
-        pygame.display.set_caption("Generic Pygame Window")
+        pygame.display.set_caption("COSMOS - Othello")
 
         while self.running:
             for event in pygame.event.get():
@@ -43,6 +44,7 @@ class Main:
                     pass
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     mx,my = pygame.mouse.get_pos()
+                    print(self.game.get_square_clicked(mx,my))
             
             screen.fill(Main.GREEN)
             self.draw(screen)
