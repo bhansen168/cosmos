@@ -55,7 +55,7 @@ class Main:
 
     def next_turn(self):
         self.activePlayerIndex = (self.activePlayerIndex+1)%2
-        if len(self.get_all_legal_moves(self.activePlayerIndex+1))== 0: #forfeit turn
+        if len(self.game.get_all_legal_moves(self.activePlayerIndex+1))== 0: #forfeit turn
             self.activePlayerIndex = (self.activePlayerIndex+1)%2
 
     def main(self):
