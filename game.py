@@ -7,7 +7,8 @@ class Game:
     EMPTY = 0
     WHITE = 2 #piece
     BLACK = 1
-
+    
+    C_GREEN = (34,139,34)
     C_BLACK = (0,0,0)
     C_WHITE = (255,255,255)
 
@@ -41,6 +42,8 @@ class Game:
 
     def draw_board(self,screen):
         TX,TY = Game.TOP_LEFT
+
+        pygame.draw.rect(screen,Game.C_GREEN,pygame.Rect(-12,-12,Game.SQUARE * self.side + TX * 2 + 12, Game.SQUARE * self.side + TY * 2 + 12),border_radius = 12)
         
         for yb in range(self.side+1):
             pygame.draw.line(screen,Game.C_BLACK,(TX,TY + yb * Game.SQUARE),(TX+Game.SQUARE * self.side,TY + yb * Game.SQUARE),width=2)

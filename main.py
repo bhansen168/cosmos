@@ -32,7 +32,7 @@ class Main:
 
 
     def blit_turn(self,screen):
-        text = self.font.render(("Black's" if self.activePlayerIndex+1 == Game.BLACK else "White's")+" Turn",True,Main.WHITE)
+        text = self.font.render(("Black's" if self.activePlayerIndex+1 == Game.BLACK else "White's")+" Turn",True,Main.BLACK)
 
         screen.blit(text,(self.width-150,25))
 
@@ -42,7 +42,7 @@ class Main:
 
         texts = ["Scores:",f"Black: {score[Game.BLACK]}",f"White: {score[Game.WHITE]}"]
         for i in range(len(texts)):#text in texts:
-            surf = self.font.render(texts[i],True,Main.WHITE)
+            surf = self.font.render(texts[i],True,Main.BLACK)
             screen.blit(surf,(x,y + i * 30))
         
 
@@ -76,7 +76,7 @@ class Main:
                         if successful:
                             self.activePlayerIndex = (self.activePlayerIndex+1)%2
             
-            screen.fill(Main.GREEN)
+            screen.fill(Main.WHITE)
             self.draw(screen)
             pygame.display.flip()
 
