@@ -3,7 +3,7 @@ class Game:
     WHITE = 1
     BLACK = 2
     
-    def __init__(self,side=8):
+    def __init__(self,side): #side is number of squares per side
         self.side = side
         self.board = [[0 for _ in range(side)] for _ in range(side)]
         #set middle squares
