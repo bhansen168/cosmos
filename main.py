@@ -61,6 +61,9 @@ class Main:
     def main(self):
         screen = pygame.display.set_mode((self.width,self.height))
 
+        icon_image = pygame.image.load('logo.png')  # Relative path to your 32x32 image
+        pygame.display.set_icon(icon_image)
+
         pygame.display.set_caption("COSMOS - Othello")
 
         while not self.game.check_game_over():
