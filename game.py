@@ -23,7 +23,7 @@ class Game:
         self.board = [[0 for _ in range(side)] for _ in range(side)]
         #set middle squares
 
-        self.game.no_legal_moves = False
+        self.no_legal_moves = False
 
         self._set_middle()
 
