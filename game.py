@@ -115,6 +115,16 @@ class Game:
             return [self.board[y][x] == Game.EMPTY and len(jumped)>0,jumped]
         return self.board[y][x] == Game.EMPTY and len(jumped)>0
 
+    def get_all_legal_moves(self,color):
+        out = []
+        for y in range(self.side):
+            for x in range(self.side):
+                if self.board[y][x] == Game.EMPTY:
+                    if self.is_legal_move(color,x,y):
+                        out.append((x,y))
+
+        return out
+
     def place_piece(self,color,x,y):
         legal,toChange = self.is_legal_move(color,x,y,returnJump = True)
         if legal:
@@ -124,14 +134,6 @@ class Game:
             return True
         return False
             
-    
-        
-
-
-if __name__ == "__main__":
-    g= Game(8)
-    print(g.is_legal_move(Game.WHITE,4,2)) #T
-    print(g.is_legal_move(Game.BLACK,4,2)) #F
 
         
         

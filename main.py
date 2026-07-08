@@ -53,7 +53,10 @@ class Main:
 
         self.draw_score(screen,self.width-150,80)
 
-        
+    def next_turn(self):
+        self.activePlayerIndex = (self.activePlayerIndex+1)%2
+        if len(self.get_all_legal_moves(self.activePlayerIndex+1))== 0: #forfeit turn
+            self.activePlayerIndex = (self.activePlayerIndex+1)%2
 
     def main(self):
         screen = pygame.display.set_mode((self.width,self.height))
@@ -74,7 +77,7 @@ class Main:
                         x,y = sq
                         successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
                         if successful:
-                            self.activePlayerIndex = (self.activePlayerIndex+1)%2
+                            self.next_turn()
             
             screen.fill(Main.WHITE)
             self.draw(screen)
