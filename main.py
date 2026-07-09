@@ -137,7 +137,10 @@ class Main:
             print(f"{('White' if key == Game.WHITE else 'Black')}: {score[key]}")
         
 if __name__ == "__main__":
-    m = Main()
+    GAME_MODE = "computer"
+    #GAME_MODE = "player"
+    
+    m = Main(GAME_MODE)
     m.main()
 
 
