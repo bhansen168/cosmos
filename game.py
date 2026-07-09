@@ -117,13 +117,18 @@ class Game:
             return [self.board[y][x] == Game.EMPTY and len(jumped)>0,jumped]
         return self.board[y][x] == Game.EMPTY and len(jumped)>0
 
-    def get_all_legal_moves(self,color):
+    def get_all_legal_moves(self,color,returnJump = False):
         out = []
         for y in range(self.side):
             for x in range(self.side):
                 if self.board[y][x] == Game.EMPTY:
-                    if self.is_legal_move(color,x,y):
-                        out.append((x,y))
+                    if returnJump:
+                        legal,jumped = self.is_legal_move(color,x,y,returnJump = True)
+                        if legal:
+                            out.append([(x,y),jumped])
+                    else:
+                        if self.is_legal_move(color,x,y):
+                            out.append((x,y))
 
         return out
 

@@ -14,13 +14,17 @@ from datetime import datetime,timedelta
 
 sys.path.append(os.getcwd())
 from game import Game
+from computer import Computer
 
 class Main:
     GREEN = (34,139,34)
     BLACK = (0,0,0)
     WHITE = (255,255,255)
+    PINK =  "#FF8DA1"
     
-    def __init__(self,side=8):
+    def __init__(self,side=8,mode = "computer"):
+        #mode is computer: pvcom
+        #mode is player: pvp
         self.running = True
 
         self.width = 800
@@ -34,6 +38,11 @@ class Main:
         self.bigFont = pygame.font.SysFont("Comic Sans",40)
 
         self.close_timeout = None
+        self.mode = mode
+
+        self.computer = None
+        if mode == "computer":
+            self.computer = Computer(self.game,Game.WHITE)
 
 
     def blit_turn(self,screen):
@@ -59,7 +68,7 @@ class Main:
         self.draw_score(screen,self.width-150,80)
 
         if self.close_timeout is not None:
-            text = self.bigFont.render("GAME OVER",True,Main.WHITE)
+            text = self.bigFont.render("GAME OVER",True,Main.PINK)
             rect = text.get_rect()
             rect.center = (self.width/2,self.height/2)
             screen.blit(text,rect)
@@ -68,6 +77,7 @@ class Main:
         self.activePlayerIndex = (self.activePlayerIndex+1)%2
         if len(self.game.get_all_legal_moves(self.activePlayerIndex+1))== 0: #forfeit turn
             self.activePlayerIndex = (self.activePlayerIndex+1)%2
+
 
     def main(self):
         screen = pygame.display.set_mode((self.width,self.height))
@@ -89,17 +99,21 @@ class Main:
                     if self.close_timeout is None:
                         mx,my = pygame.mouse.get_pos()
                         sq = self.game.get_square_clicked(mx,my)
-                        if sq is not None:
-                            x,y = sq
-                            successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
-                            if successful:
-                                self.next_turn()
-                                if len(self.game.get_all_legal_moves(self.activePlayerIndex+1)) == 0:
-                                    #game over
-                                    self.game.no_legal_moves = True
+                        if self.activePlayerIndex+1 == Game.BLACK or self.mode!="computer":
+                            if sq is not None:
+                                x,y = sq
+                                successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
+                                if successful:
+                                    if self.computer is not None:
+                                        self.computer.cooldown = datetime.now()
+                                        
+                                    self.next_turn()
+                                    if len(self.game.get_all_legal_moves(self.activePlayerIndex+1)) == 0:
+                                        #game over
+                                        self.game.no_legal_moves = True
 
-                                if self.game.check_game_over():
-                                    self.close_timeout = datetime.now()
+                                    if self.game.check_game_over():
+                                        self.close_timeout = datetime.now()
 
                             
             
@@ -109,6 +123,10 @@ class Main:
 
             if self.close_timeout is not None and (datetime.now() - self.close_timeout).total_seconds()>=5:
                 self.running = False
+            elif self.activePlayerIndex+1 == Game.WHITE and self.mode == "computer":
+                if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
+                    self.computer.pick()
+                    self.next_turn()
 
         pygame.quit()
 
@@ -116,7 +134,7 @@ class Main:
 
         print(f"Game over!\nFinal scores: ")
         for key in score:
-            print(f"{key}: {score[key]}")
+            print(f"{('White' if key == Game.WHITE else 'Black')}: {score[key]}")
         
 if __name__ == "__main__":
     m = Main()
