@@ -155,8 +155,36 @@ def coord_to_index(y, x):
 
 
 
-def encode_state(board):
-    pass
+def encode_state(board,activePlayer):
+    side = len(board)
+
+    boardCopy = [[0 for _ in range(side)] for _ in range(side)]
+    mapDict = {activePlayer:1,(1 if activePlayer==2 else 2):-1}
+    for y in range(side):
+        for x in range(side):
+            if board[y][x] != 0:
+                boardCopy[y][x] = mapDict[board[y][x]]
+
+    return np.array(boardCopy).flatten()
+
+def legal_moves_to_np_arr(legal,actionDim):
+    global MUTE_PRINTS
+    """
+    Returns:
+        legal_moves: A binary mask (list or NumPy array of 0s and 1s) 
+                     matching the length of action_dim. 
+                     1 indicates a legal position, 0 indicates a blocked/invalid move.
+    """
+
+    if not MUTE_PRINTS:
+        print("TESTlegal:",legal)
+
+    arr = np.zeros(actionDim)
+    for mx,my in legal:
+        arr[coord_to_index(my, mx)] = 1
+
+    return arr
+
 
 
 
@@ -167,7 +195,7 @@ class OthelloEnv(Game):
 
         self.state_dim = 64
         self.action_dim = 64 #not really, but it makes it easier
-
+        """
     def _format_board(self):
         #formats board in favor of current player
         boardCopy = [[0 for _ in range(self.side)] for _ in range(self.side)]
@@ -178,12 +206,15 @@ class OthelloEnv(Game):
                     boardCopy[y][x] = mapDict[self.board[y][x]]
 
         return boardCopy
+        """
 
     def _flatten(self):
         # Flatten the nested list to a 1D NumPy array; perspective adjusted in _format_board
+        '''
         flat_board = np.array(self._format_board()).flatten()
-
         return flat_board
+        '''
+        return encode_state(self.board,self.current_player)
 
         
             
@@ -246,6 +277,8 @@ class OthelloEnv(Game):
         """
         legal = self.get_all_legal_moves(self.current_player)
 
+        return legal_moves_to_np_arr(legal,self.action_dim)
+        '''
         if not MUTE_PRINTS:
             print("TESTlegal:",legal)
 
@@ -254,6 +287,7 @@ class OthelloEnv(Game):
             arr[coord_to_index(my, mx)] = 1
 
         return arr
+        '''
         
 
     def get_player_reward(self, player_id):

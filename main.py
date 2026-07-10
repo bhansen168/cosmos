@@ -14,7 +14,8 @@ from datetime import datetime,timedelta
 
 sys.path.append(os.getcwd())
 from game import Game
-from computer import Computer
+#from computer import Computer
+from computer2 import Computer2 as Computer
 
 class Main:
     GREEN = (34,139,34)
@@ -129,7 +130,7 @@ class Main:
                     self.running = False
             elif self.activePlayerIndex+1 == Game.WHITE and self.mode == "computer":
                 if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
-                    self.computer.pick_greedy()
+                    self.computer.pick()
                     self.next_turn()
 
         pygame.quit()

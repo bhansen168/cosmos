@@ -33,3 +33,6 @@ class Computer:
         mx,my = random.choice(legal)
         self.game.place_piece(self.color,mx,my)
 
+    def pick(self): #call in main.py
+        return self.pick_greedy()
+
