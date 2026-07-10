@@ -121,12 +121,16 @@ class Main:
             self.draw(screen)
             pygame.display.flip()
 
-            if self.close_timeout is not None and (datetime.now() - self.close_timeout).total_seconds()>=5:
-                self.running = False
+            if self.close_timeout is not None:
+                if (datetime.now() - self.close_timeout).total_seconds()>=5:
+                    self.running = False
             elif self.activePlayerIndex+1 == Game.WHITE and self.mode == "computer":
                 if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
                     self.computer.pick()
                     self.next_turn()
+
+                    if self.game.check_game_over():
+                        self.close_timeout = datetime.now()
 
         pygame.quit()
 
@@ -140,7 +144,7 @@ if __name__ == "__main__":
     GAME_MODE = "computer"
     #GAME_MODE = "player"
     
-    m = Main(GAME_MODE)
+    m = Main(mode=GAME_MODE)
     m.main()
 
 
