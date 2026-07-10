@@ -86,6 +86,9 @@ class Main:
         if self.game.check_game_over():
             self.close_timeout = datetime.now()
 
+        if self.computer is not None:
+            self.computer.cooldown = datetime.now()
+
 
     def main(self):
         screen = pygame.display.set_mode((self.width,self.height))
@@ -112,9 +115,6 @@ class Main:
                                 x,y = sq
                                 successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
                                 if successful:
-                                    if self.computer is not None:
-                                        self.computer.cooldown = datetime.now()
-                                        
                                     self.next_turn()
 
                     
@@ -126,7 +126,7 @@ class Main:
             pygame.display.flip()
 
             if self.close_timeout is not None:
-                if (datetime.now() - self.close_timeout).total_seconds()>=5:
+                if (datetime.now() - self.close_timeout).total_seconds()>=15:
                     self.running = False
             elif self.activePlayerIndex+1 == Game.WHITE and self.mode == "computer":
                 if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
