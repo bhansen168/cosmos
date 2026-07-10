@@ -10,33 +10,6 @@ sys.path.append(os.getcwd())
 from game import Game
 
 
-
-"""
-from torch import multiprocessing
-
-
-from collections import defaultdict
-
-import matplotlib.pyplot as plt
-from tensordict.nn import TensorDictModule
-from tensordict.nn.distributions import NormalParamExtractor
-"""
-"""
-from torchrl.collectors import SyncDataCollector
-from torchrl.data.replay_buffers import ReplayBuffer
-from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
-from torchrl.data.replay_buffers.storages import LazyTensorStorage
-from torchrl.envs import (Compose, DoubleToFloat, ObservationNorm, StepCounter,
-                          TransformedEnv)
-from torchrl.envs.libs.gym import GymEnv
-from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration_type
-from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
-from torchrl.objectives import ClipPPOLoss
-from torchrl.objectives.value import GAE
-from tqdm import tqdm
-"""
-
-
 class QNet(nn.Module):
     def __init__(self,params=64,actions=64):
         self.layer1 = nn.Linear(in_features=params, out_features=10)
@@ -179,6 +152,12 @@ class OthelloEnv(Game):
 
         return boardCopy
 
+    def _flatten(self):
+        # Flatten the nested list to a 1D NumPy array; perspective adjusted in _format_board
+        flat_board = np.array(self._format_board()).flatten()
+
+        return flat_board
+
         
             
 
@@ -192,7 +171,7 @@ class OthelloEnv(Game):
         self.board = [[0 for _ in range(self.side)] for _ in range(self.side)]
         self._set_middle()
 
-        return self._format_board(),{}
+        return self._flatten(),{}
 
     def step(self, action):
         """
@@ -204,7 +183,30 @@ class OthelloEnv(Game):
             truncated: False (unless you use a hard step-limit turn counter).
             info: Extra metadata.
         """
-        return self._format_board(),
+
+
+        y, x = index_to_coord(action)
+
+        legality = self.place_piece(self.current_player,x,y)
+        print(f"TEST: move_legal: {legality}")
+
+        #do function
+
+        gameOver = False
+
+        self.current_player = (Game.WHITE if self.current_player == Game.BLACK else Game.BLACK)
+        if len(self.get_all_legal_moves(self.current_player))==0:
+            #no legal moves
+            self.current_player = (Game.WHITE if self.current_player == Game.BLACK else Game.BLACK)
+
+        if len(self.game.get_all_legal_moves(Game.WHITE if self.current_player == Game.BLACK else Game.BLACK)) == 0:
+            gameOver = True
+        
+
+        reward = 0.0
+        truncated = False
+        
+        return self._flatten(),reward,gameOver,truncated,{}
 
     def get_legal_moves(self):
         """
@@ -221,7 +223,16 @@ class OthelloEnv(Game):
         Returns:
             reward (float): e.g., +1.0 if player_id won, -1.0 if they lost, 0.0 for a draw.
         """
-        pass
+        scores = self.get_score()
+        vals = list(scores.values())
+        if vals[0] == vals[1]:
+            return 0.0 #draw
+        elif scores[player_id] == max(vals):
+            return 1 #win
+        else:
+            return -1 #lose
+        
+
         
 
 
@@ -229,7 +240,7 @@ if __name__ == "__main__":
     env = OthelloEnv()
     
     #training loop
-    pool = OpponentPool(greedy_bot=MyGreedyRulesBot())
+    pool = OpponentPool(greedy_bot=Computer(env,None))
     num_episodes = 10000
 
     for episode in range(num_episodes):
@@ -250,7 +261,8 @@ if __name__ == "__main__":
                 if opponent_type == "LATEST_SELF":
                     action = agent.select_action(state, epsilon=0.0) # Exploit self
                 elif opponent_type == self.greedy_bot:
-                    action = pool.greedy_bot.get_move(state, env.get_legal_moves())
+                    action = pool.greedy_bot.pick_greedy(color = current_player,place = False)
+                    #action = pool.greedy_bot.pick_greedy(state, env.get_legal_moves())
                 else:
                     # Load historical model weights temporarily for the turn
                     historical_agent.load_state_dict(opponent_type)

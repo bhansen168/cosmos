@@ -8,8 +8,10 @@ class Computer:
         self.color = color
         self.cooldown = datetime.now()
 
-    def pick_greedy(self):#maximizes short-term (one turn) score gain
-        legal = self.game.get_all_legal_moves(self.color,returnJump = True)
+    def pick_greedy(self,color = None,place = True):#maximizes short-term (one turn) score gain
+        if color == None:
+            color = self.color
+        legal = self.game.get_all_legal_moves(color,returnJump = True)
 
 
         maxPair = None
@@ -20,8 +22,11 @@ class Computer:
                 maxQty = len(jumped)
                 maxPair = pair
 
-        mx,my = maxPair 
-        self.game.place_piece(self.color,mx,my)
+        mx,my = maxPair
+        if place:
+            self.game.place_piece(self.color,mx,my)
+        else:
+            return (mx,my)
 
     def pick_random(self): #selects randomly
         legal = self.game.get_all_legal_moves(self.color,returnJump = True)

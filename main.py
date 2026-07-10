@@ -78,6 +78,13 @@ class Main:
         if len(self.game.get_all_legal_moves(self.activePlayerIndex+1))== 0: #forfeit turn
             self.activePlayerIndex = (self.activePlayerIndex+1)%2
 
+        if len(self.game.get_all_legal_moves(self.activePlayerIndex+1)) == 0:
+            #game over
+            self.game.no_legal_moves = True
+
+        if self.game.check_game_over():
+            self.close_timeout = datetime.now()
+
 
     def main(self):
         screen = pygame.display.set_mode((self.width,self.height))
@@ -108,12 +115,8 @@ class Main:
                                         self.computer.cooldown = datetime.now()
                                         
                                     self.next_turn()
-                                    if len(self.game.get_all_legal_moves(self.activePlayerIndex+1)) == 0:
-                                        #game over
-                                        self.game.no_legal_moves = True
 
-                                    if self.game.check_game_over():
-                                        self.close_timeout = datetime.now()
+                    
 
                             
             
@@ -128,9 +131,6 @@ class Main:
                 if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
                     self.computer.pick_greedy()
                     self.next_turn()
-
-                    if self.game.check_game_over():
-                        self.close_timeout = datetime.now()
 
         pygame.quit()
 
