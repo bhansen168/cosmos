@@ -265,7 +265,19 @@ class OthelloEnv(Game):
             return -1 #lose
         
 
-        
+def load_agent():
+    env = OthelloEnv()
+    trained_agent = Agent(env.state_dim, env.action_dim)
+
+    # 2. Load the file from disk and push the weights into the network
+    weights = torch.load("othello_agent.pth")
+    trained_agent.policyNet.load_state_dict(weights)
+
+    # 3. CRITICAL: Switch the network to evaluation mode 
+    # This locks gradients and sets up layers properly for pure inference gameplay
+    trained_agent.policyNet.eval()
+
+    return trained_agent
 
 
 if __name__ == "__main__":
@@ -285,6 +297,8 @@ if __name__ == "__main__":
     UPDATE = 250
 
     start = datetime.now()
+
+    print("Started training at "+(str(start).split(".")[0]))
 
     for episode in range(num_episodes):
         epsilon = max(epsilon * epsilon_decay, min_epsilon)
@@ -330,9 +344,16 @@ if __name__ == "__main__":
         # Every 500 episodes, snapshot the agent and add it to the pool
         if episode % 500 == 0 and episode > 0:
             pool.add_checkpoint(agent.policyNet.state_dict())
-
+            if episode % 1000 == 0:
+                path = f"othello_{episode//num_episodes}.pth"
+                torch.save(agent.policyNet.state_dict(), path)
+                print(f"Saved checkpoint at \"{path}\"")
         
         if (episode%UPDATE ==UPDATE-1 and episode>0):
             perc = (episode+1)/num_episodes
             print(f"FINISHED EPISODE {episode+1} OF {num_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start,perc)}")
+
+    path = f"othello_final.pth"
+    torch.save(agent.policyNet.state_dict(), path)
+    print(f"Saved final version at \"{path}\"")
         
