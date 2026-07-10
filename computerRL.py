@@ -329,7 +329,7 @@ if __name__ == "__main__":
     agent = Agent(env.state_dim,env.action_dim)
     historical_agent = Agent(env.state_dim,env.action_dim)
     
-    num_episodes = 10000
+    num_episodes = 50000#10000
 
     epsilon = 1
     epsilon_decay = 0.9995
@@ -394,7 +394,7 @@ if __name__ == "__main__":
             perc = (episode+1)/num_episodes
             print(f"FINISHED EPISODE {episode+1} OF {num_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start,perc)}")
 
-    path = os.getcwd()+f"/models/othello_final.pth"
+    path = os.getcwd()+f"/models/othello_{num_episodes//1000}k.pth"
     torch.save(agent.policyNet.state_dict(), path)
     print(f"Saved final version at \"{path}\"")
         
