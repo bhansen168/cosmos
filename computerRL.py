@@ -153,6 +153,13 @@ def index_to_coord(action_idx):
 def coord_to_index(y, x):
     return y * 8 + x
 
+
+
+def encode_state(board):
+    pass
+
+
+
 class OthelloEnv(Game):
     def __init__(self,side=8):
         super().__init__(side = side)
@@ -265,12 +272,12 @@ class OthelloEnv(Game):
             return -1 #lose
         
 
-def load_agent():
+def load_agent(file):
     env = OthelloEnv()
     trained_agent = Agent(env.state_dim, env.action_dim)
 
     # 2. Load the file from disk and push the weights into the network
-    weights = torch.load("othello_agent.pth")
+    weights = torch.load(file)
     trained_agent.policyNet.load_state_dict(weights)
 
     # 3. CRITICAL: Switch the network to evaluation mode 
@@ -345,7 +352,7 @@ if __name__ == "__main__":
         if episode % 500 == 0 and episode > 0:
             pool.add_checkpoint(agent.policyNet.state_dict())
             if episode % 1000 == 0:
-                path = f"othello_{episode//num_episodes}.pth"
+                path = os.getcwd()+f"/models/othello_{episode * 100//num_episodes}.pth"
                 torch.save(agent.policyNet.state_dict(), path)
                 print(f"Saved checkpoint at \"{path}\"")
         
@@ -353,7 +360,7 @@ if __name__ == "__main__":
             perc = (episode+1)/num_episodes
             print(f"FINISHED EPISODE {episode+1} OF {num_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start,perc)}")
 
-    path = f"othello_final.pth"
+    path = os.getcwd()+f"/models/othello_final.pth"
     torch.save(agent.policyNet.state_dict(), path)
     print(f"Saved final version at \"{path}\"")
         
