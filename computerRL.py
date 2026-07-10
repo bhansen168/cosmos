@@ -367,82 +367,88 @@ if __name__ == "__main__":
     print("Started training at "+(str(start).split(".")[0]))
 
     for episode in range(num_episodes):
-        epsilon = max(epsilon * epsilon_decay, min_epsilon)
+        try:
+            epsilon = max(epsilon * epsilon_decay, min_epsilon)
 
-        
-        opponent_type = pool.select_opponent(episode, num_episodes)
-        state, _ = env.reset()
-        done = False
-        
-        while not done:
-            current_player = env.current_player
-            if not MUTE_PRINTS:
-                input("PRESS ENTER FOR NEXT TURN: ")
             
-            if current_player == agent.id:
+            opponent_type = pool.select_opponent(episode, num_episodes)
+            state, _ = env.reset()
+            done = False
+            
+            while not done:
+                current_player = env.current_player
                 if not MUTE_PRINTS:
-                    print("model to move")
+                    input("PRESS ENTER FOR NEXT TURN: ")
                 
-                
-            else:
-                # Opponent plays based on the selected pool strategy
-                if opponent_type == "LATEST_SELF":
+                if current_player == agent.id:
                     if not MUTE_PRINTS:
-                        print("opponent (self) to move")
-                    action = agent.select_action(state, env.get_legal_moves(), epsilon) # Exploit self
-                elif opponent_type == pool.greedy_bot:
-                    if not MUTE_PRINTS:
-                        print("opponent (greedy) to move")
-                    action = pool.greedy_bot.pick_greedy(color = current_player,place = False)
-                    action = (action[1],action[0])#flip coords to match
-                    #action = pool.greedy_bot.pick_greedy(state, env.get_legal_moves())
+                        print("model to move")
+                    
+                    
                 else:
-                    if not MUTE_PRINTS:
-                        print("opponent (historical) to move")
-                    # Load historical model weights temporarily for the turn
-                    historical_agent.policyNet.load_state_dict(opponent_type)
-                    action = historical_agent.select_action(state, env.get_legal_moves(), epsilon=0.0)
-                    
-                next_state, reward, done, _, _ = env.step(action)
+                    # Opponent plays based on the selected pool strategy
+                    if opponent_type == "LATEST_SELF":
+                        if not MUTE_PRINTS:
+                            print("opponent (self) to move")
+                        action = agent.select_action(state, env.get_legal_moves(), epsilon) # Exploit self
+                    elif opponent_type == pool.greedy_bot:
+                        if not MUTE_PRINTS:
+                            print("opponent (greedy) to move")
+                        action = pool.greedy_bot.pick_greedy(color = current_player,place = False)
+                        action = (action[1],action[0])#flip coords to match
+                        #action = pool.greedy_bot.pick_greedy(state, env.get_legal_moves())
+                    else:
+                        if not MUTE_PRINTS:
+                            print("opponent (historical) to move")
+                        # Load historical model weights temporarily for the turn
+                        historical_agent.policyNet.load_state_dict(opponent_type)
+                        action = historical_agent.select_action(state, env.get_legal_moves(), epsilon=0.0)
+                        
+                    next_state, reward, done, _, _ = env.step(action)
 
-            if done:
-                reward = env.get_player_reward(agent.id) #end of game stuff
-
-            # Main Agent plays using epsilon-greedy & collects gradients
-            try:
-                action = agent.select_action(state, env.get_legal_moves(), epsilon) #MAIN AGENT
-                next_state, reward, done, _, _ = env.step(action)
-
-                # (Store in Replay Buffer...)
                 if done:
-                    reward = env.get_player_reward(agent.id)
-                    
-                memory.push(state, action, reward, next_state, done)
-                state = next_state
-            except IndexError as e:
-                #game over, but didn't break like was supposed to.
-                #print("TESTdone:",done) -- True -- means Done function works properly
-                pass
-                
-            
-            # 3. CRITICAL ADDITION: Run the optimizer optimization steps
-            optimize(agent, memory, batch_size)
-                
+                    reward = env.get_player_reward(agent.id) #end of game stuff
 
-        if episode % 10 == 0:
-            agent.targetNet.load_state_dict(agent.policyNet.state_dict())
+                # Main Agent plays using epsilon-greedy & collects gradients
+                try:
+                    action = agent.select_action(state, env.get_legal_moves(), epsilon) #MAIN AGENT
+                    next_state, reward, done, _, _ = env.step(action)
+
+                    # (Store in Replay Buffer...)
+                    if done:
+                        reward = env.get_player_reward(agent.id)
+                        
+                    memory.push(state, action, reward, next_state, done)
+                    state = next_state
+                except IndexError as e:
+                    #game over, but didn't break like was supposed to.
+                    #print("TESTdone:",done) -- True -- means Done function works properly
+                    pass
+                    
                 
-        # Every 500 episodes, snapshot the agent and add it to the pool
-        if episode % 500 == 0 and episode > 0:
-            pool.add_checkpoint(agent.policyNet.state_dict())
-            if episode % 1000 == 0:
-                path = os.getcwd()+f"/models/othello_{episode * 100//num_episodes}.pth"
-                torch.save(agent.policyNet.state_dict(), path)
-                print(f"Saved checkpoint at \"{path}\"")
-        
-        if (episode%UPDATE ==UPDATE-1 and episode>0):
-            perc = (episode+1)/num_episodes
-            print(f"FINISHED EPISODE {episode+1} OF {num_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start,perc)}")
+                # 3. CRITICAL ADDITION: Run the optimizer optimization steps
+                optimize(agent, memory, batch_size)
+                    
+
+            if episode % 10 == 0:
+                agent.targetNet.load_state_dict(agent.policyNet.state_dict())
+                    
+            # Every 500 episodes, snapshot the agent and add it to the pool
+            if episode % 500 == 0 and episode > 0:
+                pool.add_checkpoint(agent.policyNet.state_dict())
+                if episode % 1000 == 0:
+                    path = os.getcwd()+f"/models/othello_{episode * 100//num_episodes}.pth"
+                    torch.save(agent.policyNet.state_dict(), path)
+                    print(f"Saved checkpoint at \"{path}\"")
+            
+            if (episode%UPDATE ==UPDATE-1 and episode>0):
+                perc = (episode+1)/num_episodes
+                print(f"FINISHED EPISODE {episode+1} OF {num_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start,perc)}")
+        except KeyboardInterrupt as e:
+            os.getcwd()+f"/models/othello_{episode * 100//num_episodes}_ABORTED.pth"
+            raise e
+            
+
 
     path = os.getcwd()+f"/models/othello_{num_episodes//1000}k.pth"
     torch.save(agent.policyNet.state_dict(), path)
