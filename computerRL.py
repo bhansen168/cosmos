@@ -19,7 +19,7 @@ def predict_finish(start,amtCompleted):
     secsElapsed = (datetime.now()-start).total_seconds()
     totalSecs = int((1/amtCompleted)*secsElapsed)
 
-    finish = datetime.now() + timedelta(seconds = totalSecs)
+    finish = datetime.now() + timedelta(seconds = totalSecs - secsElapsed)
     return str(finish).split(".")[0]
     
 
@@ -80,6 +80,7 @@ class Agent:
             # EXPLORE: Find all indices where legal_moves == 1
             valid_indices = np.where(legal_moves == 1)[0]
             return random.choice(valid_indices)
+            
         else:
             # EXPLOIT: Force network away from illegal positions
             with torch.no_grad():
@@ -103,7 +104,7 @@ def optimize(agent,memory,batchSize):
 
     states,actions,rewards,nextStates,dones = memory.sample(batchSize)
 
-    currentQ = agent.policyNet(states).gather(1,actions.unsqeeze(1)).squeeze(1)
+    currentQ = agent.policyNet(states).gather(1,actions.unsqueeze(1)).squeeze(1)
 
     with torch.no_grad():
         nextQ = agent.targetNet(nextStates).max(1)[0]
@@ -111,7 +112,7 @@ def optimize(agent,memory,batchSize):
 
     loss = F.mse_loss(currentQ,targetQ)
     agent.optimizer.zero_grad()
-    loss.backwards()#backpropagate?
+    loss.backward()#backpropagate?
     agent.optimizer.step()
 
 
@@ -195,6 +196,7 @@ class OthelloEnv(Game):
 
         self.state_dim = 64
         self.action_dim = 64 #not really, but it makes it easier
+        self.wins = 0
         """
     def _format_board(self):
         #formats board in favor of current player
@@ -260,6 +262,9 @@ class OthelloEnv(Game):
 
         if len(self.get_all_legal_moves(Game.WHITE if self.current_player == Game.BLACK else Game.BLACK)) == 0:
             gameOver = True
+
+        if self.check_game_over():
+            gameOver = True
         
 
         reward = 0.0
@@ -304,6 +309,22 @@ class OthelloEnv(Game):
             return 1 #win
         else:
             return -1 #lose
+
+    def print_board(self): #for debugging
+        string = ""
+        empty = 0
+        for y in range(self.side):
+            for x in range(self.side):
+                val = self.board[y][x]
+                string += ("X" if self.board[y][x] == self.current_player else ("_" if self.board[y][x] == 0 else "O"))
+                if self.board[y][x] == 0:
+                    empty += 1
+            string+="\n"
+
+        print(string)
+        print("NUM EMPTIES:",empty)
+                
+                
         
 
 def load_agent(file):
@@ -323,13 +344,17 @@ def load_agent(file):
 
 if __name__ == "__main__":
     env = OthelloEnv()
+
+    #memory
+    memory = ReplayBuffer(capacity=20000)
+    batch_size = 64
     
     #training loop
     pool = OpponentPool(greedy_bot=Computer(env,None))
     agent = Agent(env.state_dim,env.action_dim)
     historical_agent = Agent(env.state_dim,env.action_dim)
     
-    num_episodes = 50000#10000
+    num_episodes = 15000#50000#10000
 
     epsilon = 1
     epsilon_decay = 0.9995
@@ -357,10 +382,8 @@ if __name__ == "__main__":
             if current_player == agent.id:
                 if not MUTE_PRINTS:
                     print("model to move")
-                # Main Agent plays using epsilon-greedy & collects gradients
-                action = agent.select_action(state, env.get_legal_moves(), epsilon)
-                next_state, reward, done, _, _ = env.step(action)
-                # (Store in Replay Buffer...)
+                
+                
             else:
                 # Opponent plays based on the selected pool strategy
                 if opponent_type == "LATEST_SELF":
@@ -381,6 +404,33 @@ if __name__ == "__main__":
                     action = historical_agent.select_action(state, env.get_legal_moves(), epsilon=0.0)
                     
                 next_state, reward, done, _, _ = env.step(action)
+
+            if done:
+                reward = env.get_player_reward(agent.id) #end of game stuff
+
+            # Main Agent plays using epsilon-greedy & collects gradients
+            try:
+                action = agent.select_action(state, env.get_legal_moves(), epsilon) #MAIN AGENT
+                next_state, reward, done, _, _ = env.step(action)
+
+                # (Store in Replay Buffer...)
+                if done:
+                    reward = env.get_player_reward(agent.id)
+                    
+                memory.push(state, action, reward, next_state, done)
+                state = next_state
+            except IndexError as e:
+                #game over, but didn't break like was supposed to.
+                #print("TESTdone:",done) -- True -- means Done function works properly
+                pass
+                
+            
+            # 3. CRITICAL ADDITION: Run the optimizer optimization steps
+            optimize(agent, memory, batch_size)
+                
+
+        if episode % 10 == 0:
+            agent.targetNet.load_state_dict(agent.policyNet.state_dict())
                 
         # Every 500 episodes, snapshot the agent and add it to the pool
         if episode % 500 == 0 and episode > 0:
