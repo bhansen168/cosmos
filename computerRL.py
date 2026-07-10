@@ -2,23 +2,39 @@ import warnings,random,torch,sys,os
 warnings.filterwarnings("ignore")
 
 from torch import nn
+import torch.optim as optim
 from collections import deque
 import torch.nn.functional as F
 import numpy as np
+from datetime import datetime,timedelta
 
 sys.path.append(os.getcwd())
 from game import Game
+from computer import Computer
+
+MUTE_PRINTS = True
+
+def predict_finish(start,amtCompleted):
+    #start is datetime from start, amtCompleted is 0-1 decimal
+    secsElapsed = (datetime.now()-start).total_seconds()
+    totalSecs = int((1/amtCompleted)*secsElapsed)
+
+    finish = datetime.now() + timedelta(seconds = totalSecs)
+    return str(finish).split(".")[0]
+    
 
 
 class QNet(nn.Module):
     def __init__(self,params=64,actions=64):
+        super().__init__()
+        
         self.layer1 = nn.Linear(in_features=params, out_features=10)
         self.layer2 = nn.Linear(in_features=10, out_features=10)
         self.layer3 = nn.Linear(in_features=10, out_features=10)
         self.layer4 = nn.Linear(in_features=10, out_features=actions)
 
     def forward(self, x):
-        x = F.relu(self.layer1(x))
+        x = F.relu(self.layer1(x)) #performs relu ops in between
         x = F.relu(self.layer2(x))
         x = F.relu(self.layer3(x))
         return self.layer4(x)
@@ -40,26 +56,46 @@ class ReplayBuffer:
 
 
 class Agent:
-    def __init__(self,stateDim,actionDim,lr = 1e-3,gamma = 0.99):
+    def __init__(self, stateDim, actionDim, lr=1e-3, gamma=0.99):
         self.actionDim = actionDim
         self.gamma = gamma
-
-
-        self.policyNet = QNet(stateDim,actionDim)
-        self.targetNet = QNet(stateDim,actionDim)
+        
+        self.policyNet = QNet(stateDim, actionDim)
+        self.targetNet = QNet(stateDim, actionDim)
         self.targetNet.load_state_dict(self.policyNet.state_dict())
 
-
-        self.optimizer = torch.optim.Adam(self.policyNet.parameters,lr=lr)
-
-    def select_action(self,state,epsilon):
+        self.id = 1 
+        
+        # FIX: Added () to .parameters() so PyTorch can register the weights
+        self.optimizer = optim.Adam(self.policyNet.parameters(), lr=lr) 
+        
+    def select_action(self, state, legal_moves, epsilon):
+        """
+        legal_moves: binary mask list or numpy array of length actionDim (64)
+        """
+        # Convert to numpy array for fast masking operations
+        legal_moves = np.array(legal_moves)
+        
         if random.random() < epsilon:
-            return random.randint(0,self.actionDim-1)
+            # EXPLORE: Find all indices where legal_moves == 1
+            valid_indices = np.where(legal_moves == 1)[0]
+            return random.choice(valid_indices)
         else:
+            # EXPLOIT: Force network away from illegal positions
             with torch.no_grad():
                 state_t = torch.FloatTensor(state).unsqueeze(0)
-                return self.policyNet(state_t).argmax().item() #not sure how you can tack params onto a class
-        
+                q_values = self.policyNet(state_t).squeeze(0)
+                
+                # Clone values to avoid mutating live gradients
+                masked_q = q_values.clone()
+
+                # Find all indices where legal_moves == 0
+                illegal_indices = np.where(legal_moves == 0)[0]
+                
+                # Force illegal moves to negative infinity so argmax never picks them
+                masked_q[illegal_indices] = -float('inf')
+                
+                return masked_q.argmax().item()
 
 def optimize(agent,memory,batchSize):
     if len(memory) < batchSize:
@@ -95,36 +131,19 @@ class OpponentPool:
             
         # Phase 2: Self-play with a mix of past versions to prevent forgetting
         roll = random.random()
-        if roll < 0.10:
-            return self.greedy_bot  # 10% chance to test against baseline
-        elif roll < 0.40:
-            return random.choice(self.past_versions)  # 30% chance to play older selves
+        if roll < 0.30:
+            if len(self.past_versions)>0:
+                return random.choice(self.past_versions) # 30% chance to play older selves
+
+        if roll < 0.40:#baseline (10% chance)
+            return self.greedy_bot
         else:
             return "LATEST_SELF"  # 60% chance to play against its most recent self
 
-def select_board_action(agent, state, legal_moves, epsilon):
-    """
-    legal_moves: binary mask tensor or list of indices, e.g., [0, 1, 0, 0, 1] 
-                 where 1 means the move is legal.
-    """
-    if random.random() < epsilon:
-        # Explore ONLY within legal spaces
-        return random.choice([i for i, allowed in enumerate(legal_moves) if allowed == 1])
-    else:
-        # Exploit using masked action selection
-        with torch.no_grad():
-            state_t = torch.FloatTensor(state).unsqueeze(0)
-            q_values = agent.policy_net(state_t).squeeze(0)
-            
-            # Set illegal moves to a highly negative value (-infinity)
-            masked_q = q_values.clone()
-            illegal_indices = [i for i, allowed in enumerate(legal_moves) if allowed == 0]
-            masked_q[illegal_indices] = -float('inf')
-            
-            return masked_q.argmax().item()
-
-
 def index_to_coord(action_idx):
+    if isinstance(action_idx,tuple): #already formatted correctly
+        return action_idx
+    
     y,x = divmod(action_idx,8)
     
     #y = action_idx // 8
@@ -148,7 +167,8 @@ class OthelloEnv(Game):
         mapDict = {self.current_player:1,(1 if self.current_player==2 else 2):-1}
         for y in range(self.side):
             for x in range(self.side):
-                boardCopy[y][x] = mapDict[self.board[y][x]]
+                if self.board[y][x] != 0:
+                    boardCopy[y][x] = mapDict[self.board[y][x]]
 
         return boardCopy
 
@@ -174,6 +194,7 @@ class OthelloEnv(Game):
         return self._flatten(),{}
 
     def step(self, action):
+        global MUTE_PRINTS
         """
         Applies the chosen action to the board state.
         Returns:
@@ -184,11 +205,11 @@ class OthelloEnv(Game):
             info: Extra metadata.
         """
 
-
         y, x = index_to_coord(action)
 
         legality = self.place_piece(self.current_player,x,y)
-        print(f"TEST: move_legal: {legality}")
+        if not MUTE_PRINTS:
+            print(f"TEST: move: ({x},{y}) move_legal: {legality}")
 
         #do function
 
@@ -199,7 +220,7 @@ class OthelloEnv(Game):
             #no legal moves
             self.current_player = (Game.WHITE if self.current_player == Game.BLACK else Game.BLACK)
 
-        if len(self.game.get_all_legal_moves(Game.WHITE if self.current_player == Game.BLACK else Game.BLACK)) == 0:
+        if len(self.get_all_legal_moves(Game.WHITE if self.current_player == Game.BLACK else Game.BLACK)) == 0:
             gameOver = True
         
 
@@ -209,13 +230,24 @@ class OthelloEnv(Game):
         return self._flatten(),reward,gameOver,truncated,{}
 
     def get_legal_moves(self):
+        global MUTE_PRINTS
         """
         Returns:
             legal_moves: A binary mask (list or NumPy array of 0s and 1s) 
                          matching the length of action_dim. 
                          1 indicates a legal position, 0 indicates a blocked/invalid move.
         """
-        pass
+        legal = self.get_all_legal_moves(self.current_player)
+
+        if not MUTE_PRINTS:
+            print("TESTlegal:",legal)
+
+        arr = np.zeros(self.action_dim)
+        for mx,my in legal:
+            arr[coord_to_index(my, mx)] = 1
+
+        return arr
+        
 
     def get_player_reward(self, player_id):
         """
@@ -241,36 +273,66 @@ if __name__ == "__main__":
     
     #training loop
     pool = OpponentPool(greedy_bot=Computer(env,None))
+    agent = Agent(env.state_dim,env.action_dim)
+    historical_agent = Agent(env.state_dim,env.action_dim)
+    
     num_episodes = 10000
 
+    epsilon = 1
+    epsilon_decay = 0.9995
+    min_epsilon = 0.01
+
+    UPDATE = 250
+
+    start = datetime.now()
+
     for episode in range(num_episodes):
+        epsilon = max(epsilon * epsilon_decay, min_epsilon)
+
+        
         opponent_type = pool.select_opponent(episode, num_episodes)
         state, _ = env.reset()
         done = False
         
         while not done:
             current_player = env.current_player
+            if not MUTE_PRINTS:
+                input("PRESS ENTER FOR NEXT TURN: ")
             
             if current_player == agent.id:
+                if not MUTE_PRINTS:
+                    print("model to move")
                 # Main Agent plays using epsilon-greedy & collects gradients
-                action = agent.select_action(state, epsilon)
+                action = agent.select_action(state, env.get_legal_moves(), epsilon)
                 next_state, reward, done, _, _ = env.step(action)
                 # (Store in Replay Buffer...)
             else:
                 # Opponent plays based on the selected pool strategy
                 if opponent_type == "LATEST_SELF":
-                    action = agent.select_action(state, epsilon=0.0) # Exploit self
-                elif opponent_type == self.greedy_bot:
+                    if not MUTE_PRINTS:
+                        print("opponent (self) to move")
+                    action = agent.select_action(state, env.get_legal_moves(), epsilon) # Exploit self
+                elif opponent_type == pool.greedy_bot:
+                    if not MUTE_PRINTS:
+                        print("opponent (greedy) to move")
                     action = pool.greedy_bot.pick_greedy(color = current_player,place = False)
+                    action = (action[1],action[0])#flip coords to match
                     #action = pool.greedy_bot.pick_greedy(state, env.get_legal_moves())
                 else:
+                    if not MUTE_PRINTS:
+                        print("opponent (historical) to move")
                     # Load historical model weights temporarily for the turn
-                    historical_agent.load_state_dict(opponent_type)
-                    action = historical_agent.select_action(state, epsilon=0.0)
+                    historical_agent.policyNet.load_state_dict(opponent_type)
+                    action = historical_agent.select_action(state, env.get_legal_moves(), epsilon=0.0)
                     
                 next_state, reward, done, _, _ = env.step(action)
                 
         # Every 500 episodes, snapshot the agent and add it to the pool
         if episode % 500 == 0 and episode > 0:
-            pool.add_checkpoint(agent.policy_net.state_dict())
+            pool.add_checkpoint(agent.policyNet.state_dict())
+
+        
+        if (episode%UPDATE ==UPDATE-1 and episode>0):
+            perc = (episode+1)/num_episodes
+            print(f"FINISHED EPISODE {episode+1} OF {num_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start,perc)}")
         
