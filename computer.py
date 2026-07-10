@@ -1,12 +1,14 @@
 from datetime import datetime
 
-class Computer: #maximizes score gain
+
+
+class Computer: 
     def __init__(self,game,color):
         self.game = game
         self.color = color
         self.cooldown = datetime.now()
 
-    def pick(self):#precondition: legal is at least len=1
+    def pick_greedy(self):#maximizes short-term (one turn) score gain
         legal = self.game.get_all_legal_moves(self.color,returnJump = True)
 
 
@@ -18,8 +20,11 @@ class Computer: #maximizes score gain
                 maxQty = len(jumped)
                 maxPair = pair
 
-        #move is maxPair
         mx,my = maxPair 
         self.game.place_piece(self.color,mx,my)
 
-    
+    def pick_random(self): #selects randomly
+        legal = self.game.get_all_legal_moves(self.color,returnJump = True)
+        mx,my = random.choice(legal)
+        self.game.place_piece(self.color,mx,my)
+

@@ -126,7 +126,7 @@ class Main:
                     self.running = False
             elif self.activePlayerIndex+1 == Game.WHITE and self.mode == "computer":
                 if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
-                    self.computer.pick()
+                    self.computer.pick_greedy()
                     self.next_turn()
 
                     if self.game.check_game_over():
