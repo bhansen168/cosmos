@@ -30,20 +30,25 @@ class Main:
 
         self.width = 800
         self.height = 600
-
-        self.game = Game(side)
  
-        self.activePlayerIndex = 0 #for active player index, 0 is black and 1 is white; add 1 to get real value
-
         self.font = pygame.font.SysFont("Comic Sans",20)
         self.bigFont = pygame.font.SysFont("Comic Sans",40)
 
-        self.close_timeout = None
         self.mode = mode
-
         self.computer = None
-        if mode == "computer":
+        self.side = side
+
+        self.reset()
+
+        
+
+    def reset(self):
+        self.game = Game(self.side)
+        self.activePlayerIndex = 0
+        if self.mode == "computer":
             self.computer = Computer(self.game,Game.WHITE)
+        self.close_timeout = None
+        
 
 
     def blit_turn(self,screen):
@@ -127,7 +132,8 @@ class Main:
 
             if self.close_timeout is not None:
                 if (datetime.now() - self.close_timeout).total_seconds()>=15:
-                    self.running = False
+                    self.reset()
+                    #self.running = False
             elif self.activePlayerIndex+1 == Game.WHITE and self.mode == "computer":
                 if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
                     self.computer.pick()
@@ -137,7 +143,7 @@ class Main:
 
         score = self.game.get_score()
 
-        print(f"Game over!\nFinal scores: ")
+        print(f"\n\n====================\nGame over!\nFinal scores: ")
         for key in score:
             print(f"{('White' if key == Game.WHITE else 'Black')}: {score[key]}")
         

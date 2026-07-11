@@ -354,7 +354,7 @@ if __name__ == "__main__":
     agent = Agent(env.state_dim,env.action_dim)
     historical_agent = Agent(env.state_dim,env.action_dim)
     
-    num_episodes = 15000#50000#10000
+    num_episodes = 25000#50000#10000
 
     epsilon = 1
     epsilon_decay = 0.9995
@@ -365,6 +365,11 @@ if __name__ == "__main__":
     start = datetime.now()
 
     print("Started training at "+(str(start).split(".")[0]))
+
+    models = os.listdir(os.getcwd()+"/models")
+    for file in models:
+        if file.startswith("othello_") and file.endswith(".pth") and file[-5] in "1234567890":
+            os.remove(file)
 
     for episode in range(num_episodes):
         try:
@@ -437,7 +442,7 @@ if __name__ == "__main__":
             if episode % 500 == 0 and episode > 0:
                 pool.add_checkpoint(agent.policyNet.state_dict())
                 if episode % 1000 == 0:
-                    path = os.getcwd()+f"/models/othello_{episode * 100//num_episodes}.pth"
+                    path = os.getcwd()+f"/models/checkpoints/othello_{episode * 100//num_episodes}.pth"
                     torch.save(agent.policyNet.state_dict(), path)
                     print(f"Saved checkpoint at \"{path}\"")
             
