@@ -3,9 +3,7 @@ sys.path.append(os.getcwd())
 from computer import Computer
 from computerRL import load_agent,encode_state,legal_moves_to_np_arr,index_to_coord
 
-#PATH = os.getcwd()+"/models/othello_10k.pth"
-#PATH = os.getcwd()+"/models/othello_20.pth"
-PATH = os.getcwd()+"/models/othello_100k.pth"
+PATH = os.getcwd()+"/models/v1/othello_100k.pth"
 
 
 class Computer2(Computer): #incorporates AI model

@@ -13,7 +13,8 @@ from game import Game
 from computer import Computer
 
 MUTE_PRINTS = True
-EPOCHS = 100000
+EPOCHS = 10000
+VERSION = "v02"
 
 def predict_finish(start,amtCompleted):
     #start is datetime from start, amtCompleted is 0-1 decimal
@@ -219,6 +220,21 @@ class OthelloEnv(Game):
         '''
         return encode_state(self.board,self.current_player)
 
+    def classify_square(self,x,y):
+        '''
+        input: (x,y) -- coords
+        output:
+        0--normal
+        1--edge
+        2--corner
+        '''
+
+        xEdge = (x == self.side-1 or x == 0)
+        yEdge = (y == self.side-1 or y == 0)
+
+        return xEdge + yEdge
+        
+
         
             
 
@@ -268,7 +284,7 @@ class OthelloEnv(Game):
             gameOver = True
         
 
-        reward = 0.0
+        reward = self.classify_square(x,y)*0.02
         truncated = False
         
         return self._flatten(),reward,gameOver,truncated,{}
@@ -365,7 +381,7 @@ if __name__ == "__main__":
     min_epsilon = 0.01
 
     UPDATE = 500
-    SAV_FREQ = min(int(EPOCHS * 0.05),20000)
+    SAV_FREQ = max(min(int(EPOCHS * 0.05),20000),1000)
 
     start = datetime.now()
 
@@ -451,7 +467,7 @@ if __name__ == "__main__":
                 if episode % 500 == 0:
                     pool.add_checkpoint(agent.policyNet.state_dict())
                 if episode % SAV_FREQ == 0:
-                    path = f"{CHECKPOINT_FOLDER}/othello_{round(episode/1000,1)}k-sav.pth"
+                    path = f"{CHECKPOINT_FOLDER}/othello_{VERSION}_{round(episode/1000,1)}k-sav.pth"
                     torch.save(agent.policyNet.state_dict(), path)
                     print(f"Saved checkpoint at \"{path}\"; timestamp: {str(datetime.now()).split('.')[0]}")
             
@@ -459,14 +475,14 @@ if __name__ == "__main__":
                     perc = (episode+1)/num_episodes
                     print(f"FINISHED EPISODE {episode+1} OF {num_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start,perc)}")
         except KeyboardInterrupt as e:
-            path = f"{MODEL_FOLDER}/othello_{episode * 100//num_episodes}_ABORTED.pth"
+            path = f"{MODEL_FOLDER}/othello_{VERSION}_{episode * 100//num_episodes}_ABORTED.pth"
             torch.save(agent.policyNet.state_dict(), path)
             print(f"Aborted; saved at \"{path}\"")
             raise e
             
 
 
-    path = f"{MODEL_FOLDER}/othello_{num_episodes//1000}k.pth"
+    path = f"{MODEL_FOLDER}/othello_{VERSION}_{num_episodes//1000}k.pth"
     torch.save(agent.policyNet.state_dict(), path)
     print(f"Saved final version at \"{path}\"")
 
