@@ -364,7 +364,8 @@ if __name__ == "__main__":
     epsilon_decay = 0.9995
     min_epsilon = 0.01
 
-    UPDATE = 250
+    UPDATE = 500
+    SAV_FREQ = min(int(EPOCHS * 0.05),20000)
 
     start = datetime.now()
 
@@ -446,16 +447,17 @@ if __name__ == "__main__":
                 agent.targetNet.load_state_dict(agent.policyNet.state_dict())
                     
             # Every 500 episodes, snapshot the agent and add it to the pool
-            if episode % 500 == 0 and episode > 0:
-                pool.add_checkpoint(agent.policyNet.state_dict())
-                if episode % 1000 == 0:
-                    path = f"{CHECKPOINT_FOLDER}/othello_{episode * 100//num_episodes}.pth"
+            if episode>0:
+                if episode % 500 == 0:
+                    pool.add_checkpoint(agent.policyNet.state_dict())
+                if episode % SAV_FREQ == 0:
+                    path = f"{CHECKPOINT_FOLDER}/othello_{round(episode/1000,1)}k-sav.pth"
                     torch.save(agent.policyNet.state_dict(), path)
-                    print(f"Saved checkpoint at \"{path}\"")
+                    print(f"Saved checkpoint at \"{path}\"; timestamp: {str(datetime.now()).split('.')[0]}")
             
-            if (episode%UPDATE ==UPDATE-1 and episode>0):
-                perc = (episode+1)/num_episodes
-                print(f"FINISHED EPISODE {episode+1} OF {num_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start,perc)}")
+                if (episode%UPDATE ==UPDATE-1):
+                    perc = (episode+1)/num_episodes
+                    print(f"FINISHED EPISODE {episode+1} OF {num_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start,perc)}")
         except KeyboardInterrupt as e:
             path = f"{MODEL_FOLDER}/othello_{episode * 100//num_episodes}_ABORTED.pth"
             torch.save(agent.policyNet.state_dict(), path)
