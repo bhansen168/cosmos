@@ -141,11 +141,6 @@ class Main:
 
         pygame.quit()
 
-        score = self.game.get_score()
-
-        print(f"\n\n====================\nGame over!\nFinal scores: ")
-        for key in score:
-            print(f"{('White' if key == Game.WHITE else 'Black')}: {score[key]}")
         
 if __name__ == "__main__":
     GAME_MODE = "computer"
