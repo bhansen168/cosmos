@@ -13,6 +13,7 @@ from game import Game
 from computer import Computer
 
 MUTE_PRINTS = True
+EPOCHS = 100000
 
 def predict_finish(start,amtCompleted):
     #start is datetime from start, amtCompleted is 0-1 decimal
@@ -345,6 +346,9 @@ def load_agent(file):
 if __name__ == "__main__":
     env = OthelloEnv()
 
+    CHECKPOINT_FOLDER = os.getcwd()+"/models/checkpoints"
+    MODEL_FOLDER = os.getcwd()+"/models"
+
     #memory
     memory = ReplayBuffer(capacity=20000)
     batch_size = 64
@@ -354,7 +358,7 @@ if __name__ == "__main__":
     agent = Agent(env.state_dim,env.action_dim)
     historical_agent = Agent(env.state_dim,env.action_dim)
     
-    num_episodes = 25000#50000#10000
+    num_episodes = EPOCHS
 
     epsilon = 1
     epsilon_decay = 0.9995
@@ -366,10 +370,13 @@ if __name__ == "__main__":
 
     print("Started training at "+(str(start).split(".")[0]))
 
-    models = os.listdir(os.getcwd()+"/models")
-    for file in models:
-        if file.startswith("othello_") and file.endswith(".pth") and file[-5] in "1234567890":
-            os.remove(file)
+    if os.path.exists(CHECKPOINT_FOLDER):
+        for file in os.listdir(CHECKPOINT_FOLDER):
+            os.remove(os.path.join(CHECKPOINT_FOLDER,file))
+    else:
+        os.mkdir(CHECKPOINT_FOLDER)
+
+    #models = os.listdir(os.getcwd()+"/models")
 
     for episode in range(num_episodes):
         try:
@@ -442,7 +449,7 @@ if __name__ == "__main__":
             if episode % 500 == 0 and episode > 0:
                 pool.add_checkpoint(agent.policyNet.state_dict())
                 if episode % 1000 == 0:
-                    path = os.getcwd()+f"/models/checkpoints/othello_{episode * 100//num_episodes}.pth"
+                    path = f"{CHECKPOINT_FOLDER}/othello_{episode * 100//num_episodes}.pth"
                     torch.save(agent.policyNet.state_dict(), path)
                     print(f"Saved checkpoint at \"{path}\"")
             
@@ -450,12 +457,19 @@ if __name__ == "__main__":
                 perc = (episode+1)/num_episodes
                 print(f"FINISHED EPISODE {episode+1} OF {num_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start,perc)}")
         except KeyboardInterrupt as e:
-            os.getcwd()+f"/models/othello_{episode * 100//num_episodes}_ABORTED.pth"
+            path = f"{MODEL_FOLDER}/othello_{episode * 100//num_episodes}_ABORTED.pth"
+            torch.save(agent.policyNet.state_dict(), path)
+            print(f"Aborted; saved at \"{path}\"")
             raise e
             
 
 
-    path = os.getcwd()+f"/models/othello_{num_episodes//1000}k.pth"
+    path = f"{MODEL_FOLDER}/othello_{num_episodes//1000}k.pth"
     torch.save(agent.policyNet.state_dict(), path)
     print(f"Saved final version at \"{path}\"")
+
+    #os.remove(CHECKPOINT_FOLDER)
+    for file in os.listdir(CHECKPOINT_FOLDER):
+        os.remove(os.path.join(CHECKPOINT_FOLDER,file))
+        
         
