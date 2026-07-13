@@ -205,8 +205,8 @@ class Main:
 
         
 if __name__ == "__main__":
-    #GAME_MODE = "computer"
-    GAME_MODE = "player"
+    GAME_MODE = "computer"
+    #GAME_MODE = "player"
     
     m = Main(mode=GAME_MODE)
     m.main()
