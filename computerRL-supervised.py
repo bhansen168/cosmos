@@ -1,6 +1,10 @@
-import os,sys
+import os,sys,pickle
 sys.path.append(os.getcwd())
 from readWTB import parse_wtb
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier
 
 def predict_finish(start,amtCompleted):
     #start is datetime from start, amtCompleted is 0-1 decimal
@@ -58,15 +62,68 @@ class CompSupervised:
     
     def __init__(self):
         self.files = [file for file in os.listdir(CompSupervised.WTHOR) if file.endswith(".wtb")]
-
-            
         self.games = []
         for file in self.files:
             new = parse_wtb(CompSupervised.WTHOR+"/"+file)
-            print(f"{file}: {len(new)} games")
-            self.games.extend(parse_wtb(file))
+            #print(f"{file}: {len(new)} games")
+            new2 = []
+            for game in new:
+                new2.append([coord_to_index(tupl[1],tupl[0]) for tupl in game])
+            
+            self.games.extend(new2)
 
-        print(f"GAMES: {len(self.games)}")
+        #print(f"GAMES: {len(self.games)}")
 
+    #still misnterpreting data storage
+    '''
+    def train(self,savePath = "model.shakespeare"):
+        X = np.array([parse_board(b) for b in df['board_state']])
+        y = df['next_move'].values
 
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=42)
+
+        model = XGBClassifier(
+            objective='multi:softprob', 
+            num_class=64, 
+            n_estimators=100, 
+            max_depth=6, 
+            random_state=42
+        )
+
+        # Train the model to map board states to moves
+        model.fit(X_train, y_train)
+
+        with open(savePath,"wb") as file1:
+            pickle.dump(model,file1)
+
+class Agent:
+    def __init__(self,model):
+        self.model = model
+        
+    def pick(self,legal_moves):
+        # Crucial Othello Rule: Filter out illegal moves
+        # 'get_legal_moves' is a helper function based on standard Othello rules
+
+        move_probabilities = model.predict_proba(encode_state())[0]
+
+        # Find the highest probability move that is actually legal
+        best_move = None
+        best_prob = -1
+
+        for move in legal_moves:
+            if move_probabilities[move] > best_prob:
+                best_prob = move_probabilities[move]
+                best_move = move
+    
+def load_agent(file):
+    with open(file,"rb") as file1:
+        model = pickle.load(file1)
+
+    a = Agent(model)
+    return a
+
+        
+
+        
 cs = CompSupervised()
+'''
