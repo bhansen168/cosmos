@@ -22,6 +22,10 @@ class Main:
     BLACK = (0,0,0)
     WHITE = (255,255,255)
     PINK =  "#FF8DA1"
+    PALE_RED = "#FFDFE4"
+    LIGHT_GREEN = (162,255,184)
+    LIGHT_RED = (255,151,151)
+    LIME = (50,205,50)
     
     def __init__(self,side=8,mode = "computer"):
         #mode is computer: pvcom
@@ -37,6 +41,9 @@ class Main:
         self.mode = mode
         self.computer = None
         self.side = side
+
+        self.showLegal = False
+        self.clickDict = {}
 
         self.reset()
 
@@ -64,20 +71,67 @@ class Main:
         for i in range(len(texts)):#text in texts:
             surf = self.font.render(texts[i],True,Main.BLACK)
             screen.blit(surf,(x,y + i * 30))
+
+    def draw_toggle_bar(self,screen,x,y): #center
+        RADIUS = 15
+
+        text = self.font.render("Show legal moves",True,Main.BLACK)
+        text_rect = text.get_rect()
+        text_rect.centerx = x
+        text_rect.centery = y
+        screen.blit(text,text_rect)
+
+        if self.showLegal == False:
+            color1 = Main.PALE_RED#PINK#WHITE
+            color2 = Main.LIGHT_RED
+            xMod = 0
+        else:
+            color1 = Main.LIGHT_GREEN
+            color2 = Main.LIME
+            xMod=40
+            
+        toggle = pygame.Rect(text_rect.width + text_rect.x + 15, y-RADIUS,60, RADIUS*2)
+        pygame.draw.rect(screen, color1, toggle,  0, RADIUS*2)
         
+        pygame.draw.circle(screen,color2,(text_rect.width + text_rect.x + 25 + xMod,y),RADIUS)
+
+        out = pygame.Rect(text_rect.x,min(text_rect.y,toggle.y),(toggle.x-text_rect.x)+toggle.width,max(text_rect.bottom,toggle.bottom)-min(text_rect.y,toggle.y))
+
+        #pygame.draw.rect(screen,Main.BLACK,out,width=1)
+
+        return out
+
+    def draw_legal(self,screen):
+        TX,TY = Game.TOP_LEFT
+        legal = self.game.get_all_legal_moves(self.activePlayerIndex+1)
+        if not self.computer_active():
+            for lx,ly in legal:
+                color = (Game.C_WHITE if self.activePlayerIndex+1 == Game.WHITE else Game.C_BLACK)
+                center = (TX + Game.SQUARE * (lx+0.5),TY + Game.SQUARE* (ly+0.5))
+                pygame.draw.circle(screen,color,center,Game.RADIUS,width=1)
+
+
+    def computer_active(self):
+        return (self.mode == "computer" and self.activePlayerIndex+1 == self.computer.color)
 
     def draw(self,screen):
+        self.clickDict = {}
         self.game.draw_board(screen)
 
         self.blit_turn(screen)
 
-        self.draw_score(screen,self.width-150,80)
+        self.draw_score(screen,self.width-180,80)
 
         if self.close_timeout is not None:
             text = self.bigFont.render("GAME OVER",True,Main.PINK)
             rect = text.get_rect()
             rect.center = (self.width/2,self.height/2)
             screen.blit(text,rect)
+
+        self.clickDict["toggle"] = self.draw_toggle_bar(screen,self.width-180,self.height/2)
+
+        if self.showLegal:
+            self.draw_legal(screen)
 
     def next_turn(self):
         self.activePlayerIndex = (self.activePlayerIndex+1)%2
@@ -115,12 +169,20 @@ class Main:
                     if self.close_timeout is None:
                         mx,my = pygame.mouse.get_pos()
                         sq = self.game.get_square_clicked(mx,my)
-                        if self.activePlayerIndex+1 == Game.BLACK or self.mode!="computer":
-                            if sq is not None:
+                        if sq is not None:
+                            if self.activePlayerIndex+1 == Game.BLACK or self.mode!="computer":
                                 x,y = sq
                                 successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
                                 if successful:
                                     self.next_turn()
+
+                        else: #look in clickDict
+                            for key in self.clickDict:
+                                if self.clickDict[key].collidepoint((mx,my)):
+                                    #true
+                                    if key == "toggle":
+                                        self.showLegal = not self.showLegal
+                                    break
 
                     
 
@@ -134,7 +196,7 @@ class Main:
                 if (datetime.now() - self.close_timeout).total_seconds()>=15:
                     self.reset()
                     #self.running = False
-            elif self.activePlayerIndex+1 == Game.WHITE and self.mode == "computer":
+            elif self.computer_active():
                 if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
                     self.computer.pick()
                     self.next_turn()
@@ -143,8 +205,8 @@ class Main:
 
         
 if __name__ == "__main__":
-    GAME_MODE = "computer"
-    #GAME_MODE = "player"
+    #GAME_MODE = "computer"
+    GAME_MODE = "player"
     
     m = Main(mode=GAME_MODE)
     m.main()
