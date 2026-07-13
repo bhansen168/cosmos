@@ -14,6 +14,7 @@ class Game:
     C_LIGREEN = "#5CED73"
 
     SQUARE = 60
+    RADIUS = int(SQUARE * 0.3)
 
     TOP_LEFT = (20,20)
 
@@ -70,7 +71,7 @@ class Game:
         for y in range(self.side):
             for x in range(self.side):
                 if self.board[y][x]!=Game.EMPTY:
-                    pygame.draw.circle(screen,(Game.C_BLACK if self.board[y][x] == Game.BLACK else Game.C_WHITE),(TX + Game.SQUARE * (x+0.5),TY + Game.SQUARE* (y+0.5)),int(Game.SQUARE * 0.3))
+                    pygame.draw.circle(screen,(Game.C_BLACK if self.board[y][x] == Game.BLACK else Game.C_WHITE),(TX + Game.SQUARE * (x+0.5),TY + Game.SQUARE* (y+0.5)),Game.RADIUS)
 
     def valid(self,x,y):
         return 0 <= y < self.side and 0 <= x < self.side #is on board
