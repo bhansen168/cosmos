@@ -1,5 +1,5 @@
 from datetime import datetime
-
+import random
 
 
 class Computer: 
@@ -28,10 +28,15 @@ class Computer:
         else:
             return (mx,my)
 
-    def pick_random(self): #selects randomly
-        legal = self.game.get_all_legal_moves(self.color,returnJump = True)
+    def pick_random(self, color = None, place = True): #selects randomly
+        if color == None:
+            color = self.color
+        legal = self.game.get_all_legal_moves(color,returnJump = False)
         mx,my = random.choice(legal)
-        self.game.place_piece(self.color,mx,my)
+        if place:
+            self.game.place_piece(self.color,mx,my)
+        else:
+            return (mx,my)
 
     def pick(self): #call in main.py
         return self.pick_greedy()

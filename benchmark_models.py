@@ -372,10 +372,10 @@ class DQNPlayer:
         class QNet(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.layer1 = nn.Linear(64, 10)
-                self.layer2 = nn.Linear(10, 10)
-                self.layer3 = nn.Linear(10, 10)
-                self.layer4 = nn.Linear(10, 64)
+                self.layer1 = nn.Linear(64, 128)
+                self.layer2 = nn.Linear(128, 128)
+                self.layer3 = nn.Linear(128, 128)
+                self.layer4 = nn.Linear(128, 64)
 
             def forward(self, state):
                 state = functional.relu(self.layer1(state))

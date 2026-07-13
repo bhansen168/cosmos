@@ -13,7 +13,7 @@ from game import Game
 from computer import Computer
 
 MUTE_PRINTS = True
-EPOCHS = 25000
+EPOCHS = 10000
 VERSION = "v02"
 
 def predict_finish(start,amtCompleted):
@@ -30,10 +30,10 @@ class QNet(nn.Module):
     def __init__(self,params=64,actions=64):
         super().__init__()
         
-        self.layer1 = nn.Linear(in_features=params, out_features=10)
-        self.layer2 = nn.Linear(in_features=10, out_features=10)
-        self.layer3 = nn.Linear(in_features=10, out_features=10)
-        self.layer4 = nn.Linear(in_features=10, out_features=actions)
+        self.layer1 = nn.Linear(in_features=params, out_features=128)
+        self.layer2 = nn.Linear(in_features=128, out_features=128)
+        self.layer3 = nn.Linear(in_features=128, out_features=128)
+        self.layer4 = nn.Linear(in_features=128, out_features=actions)
 
     def forward(self, x):
         x = F.relu(self.layer1(x)) #performs relu ops in between
@@ -119,8 +119,9 @@ def optimize(agent,memory,batchSize):
 
 
 class OpponentPool:
-    def __init__(self, greedy_bot):
+    def __init__(self, greedy_bot, random_bot):
         self.greedy_bot = greedy_bot
+        self.random_bot=random_bot
         self.past_versions = []  # Stores saved state_dicts of your agent
         
     def add_checkpoint(self, agent_state_dict):
@@ -130,7 +131,7 @@ class OpponentPool:
     def select_opponent(self, episode, total_episodes):
         # Phase 1: Early training heavily favors the greedy baseline
         if episode < (total_episodes * 0.15) or not self.past_versions:
-            return self.greedy_bot
+            return self.random_bot
             
         # Phase 2: Self-play with a mix of past versions to prevent forgetting
         roll = random.random()
@@ -139,7 +140,7 @@ class OpponentPool:
                 return random.choice(self.past_versions) # 30% chance to play older selves
 
         if roll < 0.40:#baseline (10% chance)
-            return self.greedy_bot
+            return self.random_bot
         else:
             return "LATEST_SELF"  # 60% chance to play against its most recent self
 
@@ -261,9 +262,7 @@ class OthelloEnv(Game):
             truncated: False (unless you use a hard step-limit turn counter).
             info: Extra metadata.
         """
-
         y, x = index_to_coord(action)
-
         legality = self.place_piece(self.current_player,x,y)
         if not MUTE_PRINTS:
             print(f"TEST: move: ({x},{y}) move_legal: {legality}")
@@ -370,7 +369,7 @@ if __name__ == "__main__":
     batch_size = 64
     
     #training loop
-    pool = OpponentPool(greedy_bot=Computer(env,None))
+    pool = OpponentPool(greedy_bot=Computer(env,None), random_bot=Computer(env,None))
     agent = Agent(env.state_dim,env.action_dim)
     historical_agent = Agent(env.state_dim,env.action_dim)
     
@@ -380,7 +379,7 @@ if __name__ == "__main__":
     epsilon_decay = 0.9995
     min_epsilon = 0.01
 
-    UPDATE = 500
+    UPDATE = 100
     SAV_FREQ = max(min(int(EPOCHS * 0.05),20000),1000)
 
     start = datetime.now()
@@ -423,13 +422,18 @@ if __name__ == "__main__":
                         action = pool.greedy_bot.pick_greedy(color = current_player,place = False)
                         action = (action[1],action[0])#flip coords to match
                         #action = pool.greedy_bot.pick_greedy(state, env.get_legal_moves())
+                    elif opponent_type == pool.random_bot:
+                        if not MUTE_PRINTS:
+                            print("opponent (greedy) to move")
+                        action = pool.random_bot.pick_random(color = current_player,place = False)
+                        action = (action[1],action[0])#flip coords to match
+                        #action = pool.greedy_bot.pick_greedy(state, env.get_legal_moves())
                     else:
                         if not MUTE_PRINTS:
                             print("opponent (historical) to move")
                         # Load historical model weights temporarily for the turn
                         historical_agent.policyNet.load_state_dict(opponent_type)
                         action = historical_agent.select_action(state, env.get_legal_moves(), epsilon=0.0)
-                        
                     next_state, reward, done, _, _ = env.step(action)
 
                 if done:
