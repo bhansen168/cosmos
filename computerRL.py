@@ -13,7 +13,7 @@ from game import Game
 from computer import Computer
 
 MUTE_PRINTS = True
-EPOCHS = 10000
+EPOCHS = 25000
 VERSION = "v02"
 
 def predict_finish(start,amtCompleted):
@@ -387,10 +387,7 @@ if __name__ == "__main__":
 
     print("Started training at "+(str(start).split(".")[0]))
 
-    if os.path.exists(CHECKPOINT_FOLDER):
-        for file in os.listdir(CHECKPOINT_FOLDER):
-            os.remove(os.path.join(CHECKPOINT_FOLDER,file))
-    else:
+    if not os.path.exists(CHECKPOINT_FOLDER):
         os.mkdir(CHECKPOINT_FOLDER)
 
     #models = os.listdir(os.getcwd()+"/models")

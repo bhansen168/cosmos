@@ -11,6 +11,7 @@ class Game:
     C_GREEN = (34,139,34)
     C_BLACK = (0,0,0)
     C_WHITE = (255,255,255)
+    C_LIGREEN = "#5CED73"
 
     SQUARE = 60
 
@@ -24,6 +25,7 @@ class Game:
         #set middle squares
 
         self.no_legal_moves = False
+        self.last = None
 
         self._set_middle()
 
@@ -53,13 +55,17 @@ class Game:
         TX,TY = Game.TOP_LEFT
 
         pygame.draw.rect(screen,Game.C_GREEN,pygame.Rect(-12,-12,Game.SQUARE * self.side + TX * 2 + 12, Game.SQUARE * self.side + TY * 2 + 12),border_radius = 12)
-        
+
+        if self.last is not None:
+            xl,yl = self.last
+            pygame.draw.rect(screen,Game.C_LIGREEN,pygame.Rect(TX+Game.SQUARE*xl,TY+Game.SQUARE*yl,Game.SQUARE,Game.SQUARE))
+
+            
         for yb in range(self.side+1):
             pygame.draw.line(screen,Game.C_BLACK,(TX,TY + yb * Game.SQUARE),(TX+Game.SQUARE * self.side,TY + yb * Game.SQUARE),width=2)
             
         for xb in range(self.side+1):
             pygame.draw.line(screen,Game.C_BLACK,(TX+xb * Game.SQUARE,TY),(TX+xb * Game.SQUARE,TY + self.side * Game.SQUARE),width=2)
-
         
         for y in range(self.side):
             for x in range(self.side):
@@ -136,8 +142,10 @@ class Game:
         legal,toChange = self.is_legal_move(color,x,y,returnJump = True)
         if legal:
             self.board[y][x] = color
-            for x,y in toChange:
-                self.flip_piece(x,y)
+            for x1,y1 in toChange:
+                self.flip_piece(x1,y1)
+
+            self.last = [x,y]
             return True
         return False
             

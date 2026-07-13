@@ -4,7 +4,7 @@ from computer import Computer
 from computerRL import load_agent,encode_state,legal_moves_to_np_arr,index_to_coord
 
 PATH = os.getcwd()+"/models/v1/othello_100k.pth"
-
+#PATH = os.getcwd()+"/models/othello_v02_2k.pth"
 
 class Computer2(Computer): #incorporates AI model
     def __init__(self,game,color):
@@ -18,4 +18,3 @@ class Computer2(Computer): #incorporates AI model
         y, x = index_to_coord(ind)
         legality = self.game.place_piece(self.color,x,y)
 
-        #print(f"TESTlegal: {legality}")
