@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Run headless round-robin-style matches between COSMOS Othello players.
+"""Run headless matches between COSMOS Othello players.
 
 Run without arguments for an interactive model picker, or pass model specs:
 
     python benchmark_models.py --player-1 random --player-2 greedy --games 500
-    python benchmark_models.py --player-1 minimax --player-2 greedy --games 100
+    python benchmark_models.py --player-1 minimax:3 --player-2 greedy --games 100
+    python benchmark_models.py --player-1 genetic:models/genetic/genetic_gen_0024.json \
+        --player-2 minimax --games 100
     python benchmark_models.py --player-1 greedy \
         --player-2 models/v1/othello_100k.pth --games 100
 
-The program is deliberately independent of the Pygame game loop so benchmarks
-can run without opening a window. PyTorch is imported only when a DQN checkpoint
-is selected.
+The program is independent of the Pygame game loop, so benchmarks can run
+without opening a window. PyTorch is imported only when a DQN is selected.
 """
 
 from __future__ import annotations
@@ -21,133 +22,27 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Sequence
 
-
-EMPTY = 0
-BLACK = 1
-WHITE = 2
-BOARD_SIZE = 8
-DEFAULT_MINIMAX_DEPTH = 2 # reduced for benchmark test speed
-DIRECTIONS = (
-    (0, 1),
-    (1, 1),
-    (1, 0),
-    (1, -1),
-    (0, -1),
-    (-1, -1),
-    (-1, 0),
-    (-1, 1),
+from genetic_model import GeneticPlayer
+from minimax_model import DEFAULT_MINIMAX_DEPTH, MinimaxPlayer
+from othello_engine import (
+    BLACK,
+    BOARD_SIZE,
+    EMPTY,
+    WHITE,
+    HeadlessOthello,
+    LegalMove,
+    Player,
+    opponent,
+    play_game as play_engine_game,
 )
 
-# Positional values used by minimax. Corners are highly valuable, while the
-# squares immediately next to an unclaimed corner are deliberately risky.
-POSITION_WEIGHTS = (
-    (120, -25, 20, 5, 5, 20, -25, 120),
-    (-25, -45, -5, -5, -5, -5, -45, -25),
-    (20, -5, 15, 3, 3, 15, -5, 20),
-    (5, -5, 3, 3, 3, 3, -5, 5),
-    (5, -5, 3, 3, 3, 3, -5, 5),
-    (20, -5, 15, 3, 3, 15, -5, 20),
-    (-25, -45, -5, -5, -5, -5, -45, -25),
-    (120, -25, 20, 5, 5, 20, -25, 120),
-)
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODELS_DIRECTORY = PROJECT_ROOT / "models"
-
-
-def opponent(color: int) -> int:
-    return WHITE if color == BLACK else BLACK
-
-
-@dataclass(frozen=True)
-class LegalMove:
-    x: int
-    y: int
-    flips: tuple[tuple[int, int], ...]
-
-
-class HeadlessOthello:
-    """Minimal 8x8 rules engine used only by the benchmark."""
-
-    def __init__(self) -> None:
-        self.board = [[EMPTY for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
-        self.board[3][3] = WHITE
-        self.board[4][4] = WHITE
-        self.board[3][4] = BLACK
-        self.board[4][3] = BLACK
-
-    @staticmethod
-    def _inside(x: int, y: int) -> bool:
-        return 0 <= x < BOARD_SIZE and 0 <= y < BOARD_SIZE
-
-    def _flips_for(self, color: int, x: int, y: int) -> tuple[tuple[int, int], ...]:
-        if not self._inside(x, y) or self.board[y][x] != EMPTY:
-            return ()
-
-        flips: list[tuple[int, int]] = []
-        other = opponent(color)
-
-        for dx, dy in DIRECTIONS:
-            line: list[tuple[int, int]] = []
-            scan_x, scan_y = x + dx, y + dy
-
-            while self._inside(scan_x, scan_y) and self.board[scan_y][scan_x] == other:
-                line.append((scan_x, scan_y))
-                scan_x += dx
-                scan_y += dy
-
-            if (
-                line
-                and self._inside(scan_x, scan_y)
-                and self.board[scan_y][scan_x] == color
-            ):
-                flips.extend(line)
-
-        return tuple(flips)
-
-    def legal_moves(self, color: int) -> list[LegalMove]:
-        moves: list[LegalMove] = []
-        for y in range(BOARD_SIZE):
-            for x in range(BOARD_SIZE):
-                flips = self._flips_for(color, x, y)
-                if flips:
-                    moves.append(LegalMove(x=x, y=y, flips=flips))
-        return moves
-
-    def play(self, color: int, move: LegalMove) -> None:
-        if self.board[move.y][move.x] != EMPTY or not move.flips:
-            raise ValueError(f"Illegal move ({move.x}, {move.y})")
-
-        self.board[move.y][move.x] = color
-        for x, y in move.flips:
-            self.board[y][x] = color
-
-    def undo(self, color: int, move: LegalMove) -> None:
-        """Undo a move previously applied with play()."""
-        self.board[move.y][move.x] = EMPTY
-        other = opponent(color)
-        for x, y in move.flips:
-            self.board[y][x] = other
-
-    def score(self) -> dict[int, int]:
-        return {
-            BLACK: sum(row.count(BLACK) for row in self.board),
-            WHITE: sum(row.count(WHITE) for row in self.board),
-        }
-
-
-class Player(Protocol):
-    name: str
-
-    def choose_move(
-        self,
-        game: HeadlessOthello,
-        color: int,
-        legal_moves: Sequence[LegalMove],
-        rng: random.Random,
-    ) -> tuple[int, int]: ...
+GENETIC_MODELS_DIRECTORY = MODELS_DIRECTORY / "genetic"
+BENCHMARK_MINIMAX_DEPTHS = (1, 2, 3, 4)
 
 
 class RandomPlayer:
@@ -176,188 +71,14 @@ class GreedyPlayer:
         rng: random.Random,
     ) -> tuple[int, int]:
         del game, color, rng
-        # max() keeps the first row-major move when several moves flip the same
-        # number of pieces, matching the current greedy player in computer.py.
+        # max() keeps the first row-major move on a tie, matching computer.py.
         move = max(legal_moves, key=lambda candidate: len(candidate.flips))
         return move.x, move.y
 
 
-class MinimaxPlayer:
-    """Depth-limited minimax player with alpha-beta pruning."""
-
-    WIN_SCORE = 1_000_000
-
-    def __init__(self, depth: int = DEFAULT_MINIMAX_DEPTH) -> None:
-        if depth < 1:
-            raise ValueError("Minimax depth must be at least 1")
-        self.depth = depth
-        self.name = f"Minimax (depth {depth}, alpha-beta)"
-
-    @staticmethod
-    def _ordered_moves(legal_moves: Sequence[LegalMove]) -> list[LegalMove]:
-        # Strong moves first make alpha-beta cutoffs happen earlier. The tuple
-        # also provides a stable, deterministic tie-break order.
-        return sorted(
-            legal_moves,
-            key=lambda move: (
-                POSITION_WEIGHTS[move.y][move.x],
-                len(move.flips),
-                -move.y,
-                -move.x,
-            ),
-            reverse=True,
-        )
-
-    @classmethod
-    def _terminal_value(cls, game: HeadlessOthello, root_color: int) -> int:
-        scores = game.score()
-        difference = scores[root_color] - scores[opponent(root_color)]
-        if difference > 0:
-            return cls.WIN_SCORE + difference
-        if difference < 0:
-            return -cls.WIN_SCORE + difference
-        return 0
-
-    @staticmethod
-    def _heuristic_value(game: HeadlessOthello, root_color: int) -> int:
-        other = opponent(root_color)
-        root_discs = 0
-        other_discs = 0
-        positional = 0
-
-        for y, row in enumerate(game.board):
-            for x, square in enumerate(row):
-                if square == root_color:
-                    root_discs += 1
-                    positional += POSITION_WEIGHTS[y][x]
-                elif square == other:
-                    other_discs += 1
-                    positional -= POSITION_WEIGHTS[y][x]
-
-        occupied = root_discs + other_discs
-        empty = BOARD_SIZE * BOARD_SIZE - occupied
-        disc_difference = root_discs - other_discs
-        mobility_difference = len(game.legal_moves(root_color)) - len(
-            game.legal_moves(other)
-        )
-
-        # Piece count matters increasingly near the end. Earlier in the game,
-        # mobility and stable positional advantages are better indicators.
-        if empty > 20:
-            disc_weight = 1
-        elif empty > 10:
-            disc_weight = 4
-        else:
-            disc_weight = 12
-
-        return positional + 10 * mobility_difference + disc_weight * disc_difference
-
-    def _alpha_beta(
-        self,
-        game: HeadlessOthello,
-        color: int,
-        depth: int,
-        alpha: float,
-        beta: float,
-        root_color: int,
-    ) -> int:
-        legal_moves = game.legal_moves(color)
-
-        if not legal_moves:
-            if not game.legal_moves(opponent(color)):
-                return self._terminal_value(game, root_color)
-            if depth <= 0:
-                return self._heuristic_value(game, root_color)
-            # A pass changes the active color but does not consume search depth.
-            return self._alpha_beta(
-                game,
-                opponent(color),
-                depth,
-                alpha,
-                beta,
-                root_color,
-            )
-
-        if depth <= 0:
-            return self._heuristic_value(game, root_color)
-
-        ordered_moves = self._ordered_moves(legal_moves)
-        if color == root_color:
-            value = -self.WIN_SCORE * 2
-            for move in ordered_moves:
-                game.play(color, move)
-                try:
-                    child_value = self._alpha_beta(
-                        game,
-                        opponent(color),
-                        depth - 1,
-                        alpha,
-                        beta,
-                        root_color,
-                    )
-                finally:
-                    game.undo(color, move)
-                value = max(value, child_value)
-                alpha = max(alpha, value)
-                if alpha >= beta:
-                    break
-            return value
-
-        value = self.WIN_SCORE * 2
-        for move in ordered_moves:
-            game.play(color, move)
-            try:
-                child_value = self._alpha_beta(
-                    game,
-                    opponent(color),
-                    depth - 1,
-                    alpha,
-                    beta,
-                    root_color,
-                )
-            finally:
-                game.undo(color, move)
-            value = min(value, child_value)
-            beta = min(beta, value)
-            if alpha >= beta:
-                break
-        return value
-
-    def choose_move(
-        self,
-        game: HeadlessOthello,
-        color: int,
-        legal_moves: Sequence[LegalMove],
-        rng: random.Random,
-    ) -> tuple[int, int]:
-        del rng
-        best_move = self._ordered_moves(legal_moves)[0]
-        best_value = -self.WIN_SCORE * 2
-        alpha = float("-inf")
-
-        for move in self._ordered_moves(legal_moves):
-            game.play(color, move)
-            try:
-                value = self._alpha_beta(
-                    game,
-                    opponent(color),
-                    self.depth - 1,
-                    alpha,
-                    float("inf"),
-                    color,
-                )
-            finally:
-                game.undo(color, move)
-
-            if value > best_value:
-                best_value = value
-                best_move = move
-            alpha = max(alpha, best_value)
-
-        return best_move.x, best_move.y
-
-
 class DQNPlayer:
+    """Adapter for COSMOS DQN state-dictionary checkpoints."""
+
     def __init__(self, checkpoint: Path) -> None:
         try:
             import torch
@@ -369,23 +90,8 @@ class DQNPlayer:
                 "same Python environment used to run or train COSMOS."
             ) from exc
 
-        class QNet(nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.layer1 = nn.Linear(64, 128)
-                self.layer2 = nn.Linear(128, 128)
-                self.layer3 = nn.Linear(128, 128)
-                self.layer4 = nn.Linear(128, 64)
-
-            def forward(self, state):
-                state = functional.relu(self.layer1(state))
-                state = functional.relu(self.layer2(state))
-                state = functional.relu(self.layer3(state))
-                return self.layer4(state)
-
         self._torch = torch
         self.checkpoint = checkpoint.resolve()
-        self.network = QNet()
 
         try:
             state_dict = torch.load(
@@ -397,14 +103,52 @@ class DQNPlayer:
             # Compatibility with older PyTorch releases without weights_only.
             state_dict = torch.load(self.checkpoint, map_location="cpu")
 
-        self.network.load_state_dict(state_dict)
+        try:
+            layer1_weight = state_dict["layer1.weight"]
+            layer4_weight = state_dict["layer4.weight"]
+            input_size = int(layer1_weight.shape[1])
+            hidden_size = int(layer1_weight.shape[0])
+            output_size = int(layer4_weight.shape[0])
+        except (KeyError, TypeError, IndexError, AttributeError) as exc:
+            raise ValueError(
+                f"DQN checkpoint has an unrecognized network layout: {self.checkpoint}"
+            ) from exc
+
+        if input_size != BOARD_SIZE * BOARD_SIZE or output_size != BOARD_SIZE * BOARD_SIZE:
+            raise ValueError(
+                "DQN checkpoint must have 64 board inputs and 64 move outputs: "
+                f"{self.checkpoint}"
+            )
+
+        class QNet(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.layer1 = nn.Linear(64, hidden_size)
+                self.layer2 = nn.Linear(hidden_size, hidden_size)
+                self.layer3 = nn.Linear(hidden_size, hidden_size)
+                self.layer4 = nn.Linear(hidden_size, 64)
+
+            def forward(self, state):
+                state = functional.relu(self.layer1(state))
+                state = functional.relu(self.layer2(state))
+                state = functional.relu(self.layer3(state))
+                return self.layer4(state)
+
+        self.network = QNet()
+        try:
+            self.network.load_state_dict(state_dict)
+        except RuntimeError as exc:
+            raise ValueError(
+                f"DQN checkpoint does not match a supported COSMOS network: "
+                f"{self.checkpoint}"
+            ) from exc
         self.network.eval()
 
         try:
             relative_name = self.checkpoint.relative_to(PROJECT_ROOT)
         except ValueError:
             relative_name = self.checkpoint
-        self.name = f"DQN ({relative_name})"
+        self.name = f"DQN ({relative_name}, {hidden_size} hidden units)"
 
     @staticmethod
     def _encode_board(game: HeadlessOthello, color: int) -> list[int]:
@@ -420,14 +164,19 @@ class DQNPlayer:
         rng: random.Random,
     ) -> tuple[int, int]:
         del rng
-        state = self._torch.tensor(self._encode_board(game, color), dtype=self._torch.float32)
+        state = self._torch.tensor(
+            self._encode_board(game, color),
+            dtype=self._torch.float32,
+        )
         with self._torch.inference_mode():
             q_values = self.network(state)
 
         # Restrict the argmax to legal board positions.
         move = max(
             legal_moves,
-            key=lambda candidate: q_values[candidate.y * BOARD_SIZE + candidate.x].item(),
+            key=lambda candidate: q_values[
+                candidate.y * BOARD_SIZE + candidate.x
+            ].item(),
         )
         return move.x, move.y
 
@@ -480,15 +229,32 @@ def discover_models() -> list[ModelOption]:
     options = [
         ModelOption("random", "Random"),
         ModelOption("greedy", "Greedy"),
-        ModelOption(
-            "minimax",
-            f"Minimax with alpha-beta pruning (depth {DEFAULT_MINIMAX_DEPTH})",
-        ),
     ]
+
+    for depth in BENCHMARK_MINIMAX_DEPTHS:
+        spec = "minimax" if depth == DEFAULT_MINIMAX_DEPTH else f"minimax:{depth}"
+        default_label = " — default" if depth == DEFAULT_MINIMAX_DEPTH else ""
+        options.append(
+            ModelOption(
+                spec,
+                f"Minimax with alpha-beta pruning (depth {depth}){default_label}",
+            )
+        )
+
     if MODELS_DIRECTORY.exists():
         for checkpoint in sorted(MODELS_DIRECTORY.rglob("*.pth")):
             relative = checkpoint.relative_to(PROJECT_ROOT)
             options.append(ModelOption(str(relative), f"DQN: {relative}"))
+
+    if GENETIC_MODELS_DIRECTORY.exists():
+        for checkpoint in sorted(
+            GENETIC_MODELS_DIRECTORY.rglob("genetic_gen_*.json")
+        ):
+            relative = checkpoint.relative_to(PROJECT_ROOT)
+            options.append(
+                ModelOption(f"genetic:{relative}", f"Genetic: {relative}")
+            )
+
     return options
 
 
@@ -538,8 +304,28 @@ def normalize_checkpoint(raw_spec: str) -> Path:
     return checkpoint
 
 
+def normalize_genetic_checkpoint(raw_spec: str) -> Path:
+    lowered = raw_spec.lower()
+    if lowered.startswith("genetic:"):
+        spec = raw_spec[len("genetic:") :]
+    elif lowered.startswith("ga:"):
+        spec = raw_spec[len("ga:") :]
+    else:
+        spec = raw_spec
+
+    checkpoint = Path(spec).expanduser()
+    if not checkpoint.is_absolute():
+        checkpoint = PROJECT_ROOT / checkpoint
+    if not checkpoint.is_file():
+        raise ValueError(f"Genetic checkpoint not found: {checkpoint}")
+    if checkpoint.suffix.lower() != ".json":
+        raise ValueError(f"Genetic checkpoint must be a .json file: {checkpoint}")
+    return checkpoint
+
+
 def build_player(spec: str) -> Player:
-    normalized = spec.strip().lower()
+    stripped = spec.strip()
+    normalized = stripped.lower()
     if normalized == "random":
         return RandomPlayer()
     if normalized == "greedy":
@@ -555,7 +341,13 @@ def build_player(spec: str) -> Player:
                 f"Invalid minimax depth {raw_depth!r}; use a positive whole number"
             ) from exc
         return MinimaxPlayer(depth)
-    return DQNPlayer(normalize_checkpoint(spec.strip()))
+    if (
+        normalized.startswith("genetic:")
+        or normalized.startswith("ga:")
+        or normalized.endswith(".json")
+    ):
+        return GeneticPlayer.from_checkpoint(normalize_genetic_checkpoint(stripped))
+    return DQNPlayer(normalize_checkpoint(stripped))
 
 
 def play_game(
@@ -563,36 +355,14 @@ def play_game(
     player_colors: tuple[int, int],
     rng: random.Random,
 ) -> GameResult:
-    game = HeadlessOthello()
-    player_for_color = {
-        player_colors[0]: 0,
-        player_colors[1]: 1,
+    black_index = player_colors.index(BLACK)
+    white_index = player_colors.index(WHITE)
+    outcome = play_engine_game(players[black_index], players[white_index], rng)
+
+    scores_by_color = {
+        BLACK: outcome.black_score,
+        WHITE: outcome.white_score,
     }
-    color = BLACK
-    consecutive_passes = 0
-    moves_played = 0
-
-    while consecutive_passes < 2:
-        legal_moves = game.legal_moves(color)
-        if not legal_moves:
-            consecutive_passes += 1
-            color = opponent(color)
-            continue
-
-        consecutive_passes = 0
-        player_index = player_for_color[color]
-        selected = players[player_index].choose_move(game, color, legal_moves, rng)
-        legal_by_coordinate = {(move.x, move.y): move for move in legal_moves}
-        if selected not in legal_by_coordinate:
-            raise RuntimeError(
-                f"{players[player_index].name} selected illegal move {selected}"
-            )
-
-        game.play(color, legal_by_coordinate[selected])
-        moves_played += 1
-        color = opponent(color)
-
-    scores_by_color = game.score()
     player_scores = (
         scores_by_color[player_colors[0]],
         scores_by_color[player_colors[1]],
@@ -606,7 +376,7 @@ def play_game(
         winner=winner,
         player_scores=player_scores,
         player_colors=player_colors,
-        moves=moves_played,
+        moves=outcome.moves,
     )
 
 
@@ -628,7 +398,9 @@ def run_match(
         stats.record(play_game(players, colors, rng))
 
         completed = game_index + 1
-        if show_progress and (completed % progress_interval == 0 or completed == games):
+        if show_progress and (
+            completed % progress_interval == 0 or completed == games
+        ):
             print(f"\rCompleted {completed}/{games} games", flush=True)
 
     if show_progress:
@@ -676,11 +448,14 @@ def print_results(
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compare COSMOS random, greedy, minimax, and DQN Othello players.",
+        description=(
+            "Compare COSMOS random, greedy, minimax, genetic, and DQN "
+            "Othello players."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Model specs can be 'random', 'greedy', 'minimax', "
-            "'minimax:DEPTH', or a path to a .pth file.\n"
+            "'minimax:DEPTH', 'genetic:PATH.json', or a path to a .pth file.\n"
             "Omit both players to use the interactive model picker."
         ),
     )
@@ -720,7 +495,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if bool(args.player_1) != bool(args.player_2):
-        print("Error: provide both --player-1 and --player-2, or neither.", file=sys.stderr)
+        print(
+            "Error: provide both --player-1 and --player-2, or neither.",
+            file=sys.stderr,
+        )
         return 2
 
     if args.player_1:
