@@ -1,7 +1,7 @@
 import os,sys
 sys.path.append(os.getcwd())
 from computer import Computer
-from computerRL import load_agent,encode_state,legal_moves_to_np_arr,index_to_coord
+from computerRL import load_agent,encode_state,legal_moves_to_np_arr,index_to_coord,coord_to_index
 from computer_supervised import load_agent
 
 #PATH = os.getcwd()+"/models/othello_v02_70_ABORTED.pth"
@@ -30,6 +30,7 @@ class Computer3(Computer):
         self.agent = load_agent(PATH)
 
     def pick(self):
-        x,y = self.agent.pick(legal_moves_to_np_arr(self.game.get_all_legal_moves(self.color),64),encode_state(self.game.board,self.color))
+        legal = self.game.get_all_legal_moves(self.color)
+        x,y = self.agent.pick([coord_to_index(pair[1],pair[0]) for pair in legal],encode_state(self.game.board,self.color))
         legality = self.game.place_piece(self.color,x,y)
 
