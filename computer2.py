@@ -2,7 +2,7 @@ import os,sys
 sys.path.append(os.getcwd())
 from computer import Computer
 from computerRL import load_agent,encode_state,legal_moves_to_np_arr,index_to_coord,coord_to_index
-from computer_supervised import load_agent_sup
+from computer_supervised import load_agent as load_agent_sup
 
 
 class Computer2(Computer): #incorporates AI model -- use PTH extension
