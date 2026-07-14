@@ -25,6 +25,7 @@ from benchmark_models import (
     discover_models,
     print_model_list,
     prompt_for_model,
+    DQNPlayer,
 )
 from othello_engine import (
     BLACK,
@@ -449,7 +450,18 @@ class SpectatorApp:
             y += 28
             model_name = self._fit_text(self.body_font, self.players[color].name, width)
             self.screen.blit(self.body_font.render(model_name, True, self.MUTED), (x, y))
-            y += 42
+            y += 22
+            # Show DQN value prediction for the current player if applicable
+            if color == self.match.current_color and isinstance(self.players[color], DQNPlayer):
+                try:
+                    value = self.players[color].get_value_prediction(self.match.game, color)
+                    val_text = f"Value: {value:+.3f}"
+                    val_color = self.GOLD if value > 0 else (self.RED if value < 0 else self.MUTED)
+                    self.screen.blit(self.small_font.render(val_text, True, val_color), (x, y))
+                    y += 20
+                except Exception:
+                    pass
+            y += 20
 
         status, status_color = self._status_text()
         status = self._fit_text(self.heading_font, status, width)

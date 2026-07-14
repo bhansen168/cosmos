@@ -133,6 +133,17 @@ class Main:
         if self.showLegal:
             self.draw_legal(screen)
 
+        # Show DQN value prediction when computer is thinking or it's computer's turn
+        if self.computer_active() and hasattr(self.computer, 'get_value_prediction'):
+            try:
+                value = self.computer.get_value_prediction()
+                val_text = f"DQN Value: {value:+.3f}"
+                val_color = Main.LIGHT_GREEN if value > 0 else (Main.LIGHT_RED if value < 0 else Main.BLACK)
+                surf = self.font.render(val_text, True, val_color)
+                screen.blit(surf, (self.width-180, 180))
+            except Exception:
+                pass
+
     def next_turn(self):
         self.activePlayerIndex = (self.activePlayerIndex+1)%2
         if len(self.game.get_all_legal_moves(self.activePlayerIndex+1))== 0: #forfeit turn

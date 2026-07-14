@@ -11,6 +11,7 @@ from datetime import datetime,timedelta
 sys.path.append(os.getcwd())
 from game import Game
 from computer import Computer
+from model_adapters import create_minimax_computer, create_genetic_computer
 
 MUTE_PRINTS = True
 EPOCHS = 10000
@@ -69,7 +70,9 @@ class Agent:
         self.id = 1 
         
         # FIX: Added () to .parameters() so PyTorch can register the weights
-        self.optimizer = optim.Adam(self.policyNet.parameters(), lr=lr) 
+        self.optimizer = optim.Adam(self.policyNet.parameters(), lr=lr, weight_decay=1e-4)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=1000, gamma=0.95)
+
         
     def select_action(self, state, legal_moves, epsilon):
         """
@@ -100,6 +103,20 @@ class Agent:
                 
                 return masked_q.argmax().item()
 
+    def get_value_prediction(self, state, legal_moves):
+        """Return the estimated value (max Q over legal moves) for the current position."""
+        legal_moves = np.array(legal_moves)
+        with torch.no_grad():
+            state_t = torch.FloatTensor(state).unsqueeze(0)
+            q_values = self.policyNet(state_t).squeeze(0)
+            
+            # Mask illegal moves
+            masked_q = q_values.clone()
+            illegal_indices = np.where(legal_moves == 0)[0]
+            masked_q[illegal_indices] = -float('inf')
+            
+            return masked_q.max().item()
+
 def optimize(agent,memory,batchSize):
     if len(memory) < batchSize:
         return
@@ -109,19 +126,21 @@ def optimize(agent,memory,batchSize):
     currentQ = agent.policyNet(states).gather(1,actions.unsqueeze(1)).squeeze(1)
 
     with torch.no_grad():
-        nextQ = agent.targetNet(nextStates).max(1)[0]
+        # Double DQN: use policy net to select action, target net to evaluate
+        next_actions = agent.policyNet(nextStates).argmax(1)
+        nextQ = agent.targetNet(nextStates).gather(1, next_actions.unsqueeze(1)).squeeze(1)
         targetQ = rewards + (agent.gamma * nextQ * (1-dones))
 
     loss = F.mse_loss(currentQ,targetQ)
     agent.optimizer.zero_grad()
-    loss.backward()#backpropagate?
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(agent.policyNet.parameters(), max_norm=1.0)
     agent.optimizer.step()
 
 
 class OpponentPool:
-    def __init__(self, greedy_bot, random_bot):
-        self.greedy_bot = greedy_bot
-        self.random_bot=random_bot
+    def __init__(self, minimax_bot):
+        self.minimax_bot = minimax_bot
         self.past_versions = []  # Stores saved state_dicts of your agent
         
     def add_checkpoint(self, agent_state_dict):
@@ -129,20 +148,16 @@ class OpponentPool:
         self.past_versions.append(agent_state_dict)
         
     def select_opponent(self, episode, total_episodes):
-        # Phase 1: Early training heavily favors the greedy baseline
-        if episode < (total_episodes * 0.15) or not self.past_versions:
-            return self.random_bot
-            
-        # Phase 2: Self-play with a mix of past versions to prevent forgetting
+        # Fixed distribution: 50% minimax, 25% latest self, 25% historical
         roll = random.random()
-        if roll < 0.30:
-            if len(self.past_versions)>0:
-                return random.choice(self.past_versions) # 30% chance to play older selves
-
-        if roll < 0.40:#baseline (10% chance)
-            return self.random_bot
+        if roll < 0.50:
+            return self.minimax_bot
+        elif roll < 0.75:
+            return "LATEST_SELF"
         else:
-            return "LATEST_SELF"  # 60% chance to play against its most recent self
+            if self.past_versions:
+                return random.choice(self.past_versions)
+            return self.minimax_bot  # fallback if no history yet
 
 def index_to_coord(action_idx):
     if isinstance(action_idx,tuple): #already formatted correctly
@@ -319,12 +334,7 @@ class OthelloEnv(Game):
         """
         scores = self.get_score()
         vals = list(scores.values())
-        if vals[0] == vals[1]:
-            return 0.0 #draw
-        elif scores[player_id] == max(vals):
-            return 1 #win
-        else:
-            return -1 #lose
+        return scores[player_id]/32-1
 
     def print_board(self): #for debugging
         string = ""
@@ -369,10 +379,18 @@ if __name__ == "__main__":
     batch_size = 64
     
     #training loop
-    pool = OpponentPool(greedy_bot=Computer(env,None), random_bot=Computer(env,None))
+    minimax_bot = create_minimax_computer(env, Game.BLACK, depth=2)
+    pool = OpponentPool(minimax_bot=minimax_bot)
     agent = Agent(env.state_dim,env.action_dim)
     historical_agent = Agent(env.state_dim,env.action_dim)
     
+    def get_bot_action(bot, color, method_name):
+        """Get action from bot, handling both old Computer and new adapter interfaces."""
+        method = getattr(bot, method_name)
+        action = method(color=color, place=False)
+        # Both old and new bots return (x, y), convert to (y, x) for env.step
+        return (action[1], action[0])
+
     num_episodes = EPOCHS
 
     epsilon = 1
@@ -416,18 +434,10 @@ if __name__ == "__main__":
                         if not MUTE_PRINTS:
                             print("opponent (self) to move")
                         action = agent.select_action(state, env.get_legal_moves(), epsilon) # Exploit self
-                    elif opponent_type == pool.greedy_bot:
+                    elif opponent_type == pool.minimax_bot:
                         if not MUTE_PRINTS:
-                            print("opponent (greedy) to move")
-                        action = pool.greedy_bot.pick_greedy(color = current_player,place = False)
-                        action = (action[1],action[0])#flip coords to match
-                        #action = pool.greedy_bot.pick_greedy(state, env.get_legal_moves())
-                    elif opponent_type == pool.random_bot:
-                        if not MUTE_PRINTS:
-                            print("opponent (greedy) to move")
-                        action = pool.random_bot.pick_random(color = current_player,place = False)
-                        action = (action[1],action[0])#flip coords to match
-                        #action = pool.greedy_bot.pick_greedy(state, env.get_legal_moves())
+                            print("opponent (minimax) to move")
+                        action = get_bot_action(pool.minimax_bot, current_player, "pick_minimax")
                     else:
                         if not MUTE_PRINTS:
                             print("opponent (historical) to move")
@@ -460,7 +470,11 @@ if __name__ == "__main__":
                 optimize(agent, memory, batch_size)
                     
 
-            if episode % 10 == 0:
+                # Step LR scheduler per episode
+                agent.scheduler.step()
+                    
+            # Update target network every 100 episodes (not every episode)
+            if episode % 100 == 0:
                 agent.targetNet.load_state_dict(agent.policyNet.state_dict())
                     
             # Every 500 episodes, snapshot the agent and add it to the pool

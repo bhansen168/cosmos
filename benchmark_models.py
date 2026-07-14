@@ -412,6 +412,24 @@ class DQNPlayer:
         values = {EMPTY: 0, color: 1, other: -1}
         return [values[square] for row in game.board for square in row]
 
+    def _get_q_values(self, game: HeadlessOthello, color: int):
+        """Return raw Q-values tensor for the current position."""
+        state = self._torch.tensor(self._encode_board(game, color), dtype=self._torch.float32)
+        with self._torch.inference_mode():
+            return self.network(state)
+
+    def get_value_prediction(self, game: HeadlessOthello, color: int) -> float:
+        """Return the estimated value (max Q over legal moves) for the current position."""
+        q_values = self._get_q_values(game, color)
+        legal_moves = game.legal_moves(color)
+        if not legal_moves:
+            return 0.0
+        max_q = max(
+            q_values[move.y * BOARD_SIZE + move.x].item()
+            for move in legal_moves
+        )
+        return max_q
+
     def choose_move(
         self,
         game: HeadlessOthello,
@@ -420,9 +438,7 @@ class DQNPlayer:
         rng: random.Random,
     ) -> tuple[int, int]:
         del rng
-        state = self._torch.tensor(self._encode_board(game, color), dtype=self._torch.float32)
-        with self._torch.inference_mode():
-            q_values = self.network(state)
+        q_values = self._get_q_values(game, color)
 
         # Restrict the argmax to legal board positions.
         move = max(
