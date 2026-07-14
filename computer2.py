@@ -4,17 +4,12 @@ from computer import Computer
 from computerRL import load_agent,encode_state,legal_moves_to_np_arr,index_to_coord,coord_to_index
 from computer_supervised import load_agent
 
-#PATH = os.getcwd()+"/models/othello_v02_70_ABORTED.pth"
-#PATH = os.getcwd()+"/models/othello_v02_2k.pth"
-
-#supervised
-PATH = os.getcwd()+"/models/demo.bard"
 
 class Computer2(Computer): #incorporates AI model -- use PTH extension
+    PATH = os.getcwd()+"/models/othello_v02_2k.pth"
     def __init__(self,game,color):
-        global PATH
         super().__init__(game,color)
-        self.agent = load_agent(PATH)
+        self.agent = load_agent(Computer2.PATH)
 
     def pick(self):
         ind = self.agent.select_action(encode_state(self.game.board,self.color), legal_moves_to_np_arr(self.game.get_all_legal_moves(self.color),self.agent.actionDim), 0.0)
@@ -24,10 +19,11 @@ class Computer2(Computer): #incorporates AI model -- use PTH extension
 
 
 class Computer3(Computer):
+    PATH = os.getcwd()+"/models/demo.bard"
     def __init__(self,game,color):
         global PATH
         super().__init__(game,color)
-        self.agent = load_agent(PATH)
+        self.agent = load_agent(Computer3.PATH)
 
     def pick(self):
         legal = self.game.get_all_legal_moves(self.color)
