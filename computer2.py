@@ -2,7 +2,7 @@ import os,sys
 sys.path.append(os.getcwd())
 from computer import Computer
 from computerRL import load_agent,encode_state,legal_moves_to_np_arr,index_to_coord,coord_to_index
-from computer_supervised import load_agent
+from computer_supervised import load_agent_sup
 
 
 class Computer2(Computer): #incorporates AI model -- use PTH extension
@@ -23,7 +23,7 @@ class Computer3(Computer):
     def __init__(self,game,color):
         global PATH
         super().__init__(game,color)
-        self.agent = load_agent(Computer3.PATH)
+        self.agent = load_agent_sup(Computer3.PATH)
 
     def pick(self):
         legal = self.game.get_all_legal_moves(self.color)
