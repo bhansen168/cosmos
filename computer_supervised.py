@@ -198,13 +198,17 @@ class Agent:
         # Fallback if the environment forces a turn check when no moves exist
         if not legal_moves:
             return 64 # Assuming 64 represents a pass in your game controller
+
+        board_2d = board_state.reshape(1, -1)
             
         # Get raw probabilities (array length 60)
         # Note: Ensure encode_state() passes the active board array to your model
-        move_probabilities = self.model.predict_proba(board_state)[0] 
+        move_probabilities = self.model.predict_proba(board_2d)[0] 
         
         best_move = None
         best_prob = -1
+        #print("LEGAL: "+str(len(legal_moves)))
+        #print(legal_moves)
         
         for move in legal_moves:
             # Skip the pass move if it's mixed into legal moves, or handle it explicitly
@@ -216,24 +220,32 @@ class Agent:
             
             # Safely query the probability from the 60-element output array
             prob = move_probabilities[xgb_slot]
+            y,x = index_to_coord(move)
+            #print((x,y),prob)
             
             if prob > best_prob:
                 best_prob = prob
                 best_move = move
+
                 
         # If no grid moves were selected, default to your pass action index
+        #print("TEST",best_move,best_prob)
+
         return best_move if best_move is not None else 64
 
-    def pick(self,legal,board,asCoord = False):
+    def pick(self,legal,board,asCoord = True):
         #game should automatically pass, ignore case 64
         sel = self.pick_xgb(legal,board)
+
+        #print("TEST_sel",sel)
         
         if sel == 64: #PASS
             return
 
-        othelloIdx = xgb_to_index(sel)
+        #othelloIdx = xgb_to_index(sel)
         if asCoord:
-            y,x = index_to_coord(othelloIdx)
+            y,x = index_to_coord(sel)#othelloIdx)
+            #print("COORDtest:",(x,y))
             return (x,y)
         return othelloIdx
         
@@ -247,6 +259,6 @@ def load_agent(file):
 
         
 
-        
-cs = CompSupervised()
-cs.train(savePath=os.getcwd()+"/models/demo.bard")
+if __name__ == "__main__":
+    cs = CompSupervised()
+    cs.train(savePath=os.getcwd()+"/models/demo.bard")
