@@ -236,19 +236,18 @@ class OthelloEnv(Game):
         '''
         return encode_state(self.board,self.current_player)
 
-    def classify_square(self,x,y):
-        '''
-        input: (x,y) -- coords
-        output:
-        0--normal
-        1--edge
-        2--corner
-        '''
-
-        xEdge = (x == self.side-1 or x == 0)
-        yEdge = (y == self.side-1 or y == 0)
-
-        return xEdge + yEdge
+    def _count_opponent_square_access(self, color):
+        """Count opponent's legal moves on edges/corners after current move."""
+        opp = Game.WHITE if color == Game.BLACK else Game.BLACK
+        legal = self.get_all_legal_moves(opp)
+        edge_count = 0
+        corner_count = 0
+        for lx, ly in legal:
+            if (lx == 0 or lx == 7) and (ly == 0 or ly == 7):
+                corner_count += 1
+            elif lx == 0 or lx == 7 or ly == 0 or ly == 7:
+                edge_count += 1
+        return edge_count, corner_count
         
 
         
@@ -297,8 +296,15 @@ class OthelloEnv(Game):
         if self.check_game_over():
             gameOver = True
         
-
-        reward = self.classify_square(x,y)*0.02
+        
+        # Reward for taking edges/corners, penalty for giving opponent access
+        edge_reward = (1 if (x == 0 or x == 7 or y == 0 or y == 7) else 0) * 0.02
+        corner_reward = (1 if ((x == 0 or x == 7) and (y == 0 or y == 7)) else 0) * 0.04
+        
+        opp_edge, opp_corner = self._count_opponent_square_access(self.current_player)
+        opp_penalty = opp_edge * 0.02 + opp_corner * 0.04
+        
+        reward = edge_reward + corner_reward - opp_penalty
         truncated = False
         
         return self._flatten(),reward,gameOver,truncated,{}
