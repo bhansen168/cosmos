@@ -89,7 +89,7 @@ def legal_moves_to_np_arr(legal,actionDim):
     return arr
 
 class CompSupervised:
-    WTHOR = os.getcwd()+"/wthor"
+    WTHOR = os.getcwd()+"/data"
     
     def __init__(self):
         self.files = [file for file in os.listdir(CompSupervised.WTHOR) if file.endswith(".wtb")]
