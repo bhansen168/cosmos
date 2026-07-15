@@ -25,9 +25,8 @@ class Computer2(Computer): #incorporates AI model -- use PTH extension
         return self.agent.get_value_prediction(state, legal_moves)
 
 class Computer3(Computer):
-    PATH = os.getcwd()+"/models/demo.bard"
+    PATH = os.getcwd()+"/models/demoPlus.bard"
     def __init__(self,game,color):
-        global PATH
         super().__init__(game,color)
         self.agent = load_agent_sup(Computer3.PATH)
 
