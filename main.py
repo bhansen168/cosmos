@@ -15,8 +15,8 @@ from datetime import datetime,timedelta
 sys.path.append(os.getcwd())
 from game import Game
 #from computer import Computer
-from computer2 import Computer2 as Computer
-#from computer2 import Computer3 as Computer #supervised bot; really bad
+#from computer2 import Computer2 as Computer
+from computer2 import Computer3 as Computer #supervised bot; really bad
 
 class Main:
     GREEN = (34,139,34)
@@ -55,6 +55,7 @@ class Main:
         self.activePlayerIndex = 0
         if self.mode == "computer":
             self.computer = Computer(self.game,Game.WHITE)
+            print(f"Playing \"{Computer.PATH}\"")
         self.close_timeout = None
         
 

@@ -98,6 +98,8 @@ class CompSupervised:
             new = parse_wtb(CompSupervised.WTHOR+"/"+file)
             games.extend(new)
 
+        print(f"Games: {len(games)}")
+
         '''
         sample game:
             [(5, 6), (6, 4), (3, 3), (3, 4), (4, 3), (4, 6), (6, 6), (5, 7), (3, 5), (3, 6), (4, 7), (2, 5),
@@ -261,4 +263,4 @@ def load_agent(file):
 
 if __name__ == "__main__":
     cs = CompSupervised()
-    cs.train(savePath=os.getcwd()+"/models/demo.bard")
+    cs.train(savePath=os.getcwd()+"/models/demoPlus.bard")
