@@ -24,6 +24,10 @@ class Game:
     C_BLACK = (0,0,0)
     C_WHITE = (255,255,255)
     C_LIGREEN = "#5CED73"
+    C_SHADOW = (80,80,80)
+
+    SHADOW_OFFSET = 2
+    SHADOW_DIRS = [0,2]
 
     SQUARE = 60
     RADIUS = int(SQUARE * 0.3)
@@ -91,6 +95,8 @@ class Game:
         for y in range(self.side):
             for x in range(self.side):
                 if self.board[y][x]!=Game.EMPTY:
+                    #pygame.draw.circle(screen,(Game.C_BLACK if self.board[y][x] == Game.BLACK else Game.C_WHITE),(TX + Game.SQUARE * (x+0.5),TY + Game.SQUARE* (y+0.5)),Game.RADIUS)
+                    pygame.draw.circle(screen,Game.C_SHADOW,(TX + Game.SQUARE * (x+0.5)+Game.SHADOW_OFFSET * Game.SHADOW_DIRS[0],TY + Game.SQUARE* (y+0.5)+Game.SHADOW_OFFSET * Game.SHADOW_DIRS[1]),Game.RADIUS)
                     pygame.draw.circle(screen,(Game.C_BLACK if self.board[y][x] == Game.BLACK else Game.C_WHITE),(TX + Game.SQUARE * (x+0.5),TY + Game.SQUARE* (y+0.5)),Game.RADIUS)
 
     def valid(self,x,y):
