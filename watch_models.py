@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Watch two COSMOS Othello models play with autoplay and step controls."""
+"""Watch two COSMOS Othello models play using the original game.py engine."""
 
 from __future__ import annotations
 
@@ -27,17 +27,16 @@ from benchmark_models import (
     prompt_for_model,
     DQNPlayer,
 )
+from game import Game, LegalMove
 from othello_engine import (
-    BLACK,
-    BOARD_SIZE,
-    WHITE,
-    HeadlessOthello,
-    LegalMove,
     Player,
     opponent,
 )
 
 
+BLACK = Game.BLACK
+WHITE = Game.WHITE
+BOARD_SIZE = 8
 COLOR_NAMES = {BLACK: "Black", WHITE: "White"}
 
 
@@ -70,7 +69,7 @@ class SpectatorMatch:
         self.reset()
 
     def reset(self) -> None:
-        self.game = HeadlessOthello()
+        self.game = Game()
         self.current_color = BLACK
         self.last_move: tuple[int, int] | None = None
         self.history: list[TurnRecord] = []

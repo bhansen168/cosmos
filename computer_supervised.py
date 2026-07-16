@@ -5,17 +5,9 @@ An attempt to train a supervised learning bot on historical data
 import os,sys,pickle
 
 import numpy as np
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from xgboost import XGBClassifier
 from datetime import datetime,timedelta
 
-
 sys.path.append(os.getcwd())
-from readWTB import parse_wtb
-from parse_csv import parse_csv
-from computerRL import OthelloEnv
 
 def predict_finish(start,amtCompleted):
     #start is datetime from start, amtCompleted is 0-1 decimal
@@ -97,6 +89,9 @@ class CompSupervised:
     DATA = os.getcwd()+"/data"
     
     def __init__(self):
+        from parse_csv import parse_csv
+        from readWTB import parse_wtb
+
         self.files = [file for file in os.listdir(CompSupervised.DATA) if (file.endswith(".wtb") or file.endswith(".csv"))]
         games = []
         for file in self.files:
@@ -113,10 +108,13 @@ class CompSupervised:
         self.format_data(games)
 
     def format_data(self, games):
+        from computerRL import OthelloEnv
+
         env = OthelloEnv()
         self.games = []
         
-        for game in games:
+        for i in range(len(games)):
+            game = games[i]
             gameFormatted = []
             board, _ = env.reset() # Assuming env.reset() returns (initial_board, info)
             
@@ -145,8 +143,20 @@ class CompSupervised:
                     board, _, _, _, _ = env.step(action)
                 
             self.games.append(gameFormatted)
+
+            if i%200 == 199 or i+1==len(games):
+                print("Formatted {i+1} / {len(games)} ({round((i+1)/len(games) * 100,2)}%) -- finish formatting at "+predict_finish(start,(i+1)/len(games)))
+                
+                
+
+            
+
+            
         #print("Formatted data!")
     def train(self, savePath="model.bard"): 
+        from sklearn.model_selection import train_test_split
+        from xgboost import XGBClassifier
+
         print("Training...")
         X_list = []
         y_list = []
@@ -183,7 +193,7 @@ class CompSupervised:
         )
 
         # 5. TRAIN AND SAVE
-        model.fit(X_train, y_train)
+        model.fit(X_train, y_train,verbose=True)
 
         with open(savePath, "wb") as file1:
             pickle.dump(model, file1)
@@ -247,18 +257,25 @@ class Agent:
             y,x = index_to_coord(sel)#othelloIdx)
             #print("COORDtest:",(x,y))
             return (x,y)
-        return othelloIdx
+        return sel
         
     
 def load_agent(file):
-    with open(file,"rb") as file1:
-        model = pickle.load(file1)
+    try:
+        with open(file,"rb") as file1:
+            model = pickle.load(file1)
+    except ModuleNotFoundError as exc:
+        if exc.name == "xgboost":
+            raise RuntimeError(
+                "Bard checkpoints require XGBoost. Install xgboost in the "
+                "Python environment used to run COSMOS."
+            ) from exc
+        raise
 
     a = Agent(model)
     return a
 
-        
 
 if __name__ == "__main__":
     cs = CompSupervised()
-    cs.train(savePath=os.getcwd()+"/models/demo++.bard")
+    cs.train(savePath=os.getcwd()+f"/models/supervised/wthor-kaggle-{str(datetime.now()).split('.')[0].replace('-','').replace(' ','').replace(':','')}.bard")
