@@ -9,6 +9,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 # game.py imports Pygame for rendering, but its rules engine does not need it.
@@ -28,6 +29,7 @@ from benchmark_models import (  # noqa: E402
     run_match,
 )
 from computer import Computer, RandomComputer, create_minimax_computer  # noqa: E402
+from computer2 import Computer3  # noqa: E402
 from genetic_model import (  # noqa: E402
     CHECKPOINT_FORMAT,
     CHECKPOINT_VERSION,
@@ -136,7 +138,37 @@ class MatchTests(unittest.TestCase):
             specs[:6],
             ["random", "greedy", "minimax:1", "minimax", "minimax:3", "minimax:4"],
         )
+        self.assertIn("bard", specs)
+        self.assertTrue(any(spec.startswith("bard:") for spec in specs))
         self.assertTrue(any(spec.lower().endswith(".pth") for spec in specs[6:]))
+
+    def test_bard_adapter_selects_a_legal_move(self) -> None:
+        class FakeBardAgent:
+            @staticmethod
+            def pick(legal_moves, board):
+                self.assertEqual(board.shape, (64,))
+                y, x = divmod(legal_moves[0], 8)
+                return x, y
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            checkpoint = Path(temporary_directory) / "test.bard"
+            checkpoint.write_bytes(b"test checkpoint")
+            with mock.patch(
+                "computer2.load_agent_sup",
+                return_value=FakeBardAgent(),
+            ):
+                player = build_player(f"bard:{checkpoint}")
+
+            self.assertIsInstance(player, Computer3)
+            game = Game()
+            legal_moves = game.legal_moves(BLACK)
+            selected = player.choose_move(
+                game,
+                BLACK,
+                legal_moves,
+                random.Random(0),
+            )
+            self.assertIn(selected, {(move.x, move.y) for move in legal_moves})
 
     def test_minimax_selects_a_legal_move_without_changing_the_board(self) -> None:
         game = HeadlessOthello()
@@ -287,6 +319,7 @@ class MatchTests(unittest.TestCase):
 class SpectatorTests(unittest.TestCase):
     def test_spectator_state_can_step_through_a_complete_game(self) -> None:
         match = SpectatorMatch()
+        self.assertIsInstance(match.game, Game)
         rng = random.Random(17)
 
         while not match.game_over:

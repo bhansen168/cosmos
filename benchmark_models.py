@@ -9,6 +9,7 @@ Run without arguments for an interactive model picker, or pass model specs:
         --player-2 minimax --games 100
     python benchmark_models.py --player-1 greedy \
         --player-2 models/v1/othello_100k.pth --games 100
+    python benchmark_models.py --player-1 bard --player-2 greedy --games 100
 
 The program is independent of the Pygame game loop, so benchmarks can run
 without opening a window. PyTorch is imported only when a DQN is selected.
@@ -42,6 +43,7 @@ from othello_engine import (
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODELS_DIRECTORY = PROJECT_ROOT / "models"
 GENETIC_MODELS_DIRECTORY = MODELS_DIRECTORY / "genetic"
+DEFAULT_BARD_CHECKPOINT = MODELS_DIRECTORY / "supervised" / "wthor-kaggle.bard"
 BENCHMARK_MINIMAX_DEPTHS = (1, 2, 3, 4)
 
 
@@ -163,6 +165,18 @@ def discover_models() -> list[ModelOption]:
         )
 
     if MODELS_DIRECTORY.exists():
+        for checkpoint in sorted(MODELS_DIRECTORY.rglob("*.bard")):
+            relative = checkpoint.relative_to(PROJECT_ROOT)
+            is_default = checkpoint.resolve() == DEFAULT_BARD_CHECKPOINT.resolve()
+            spec = "bard" if is_default else f"bard:{relative}"
+            default_label = " — default" if is_default else ""
+            options.append(
+                ModelOption(
+                    spec,
+                    f"Bard supervised: {relative}{default_label}",
+                )
+            )
+
         for checkpoint in sorted(MODELS_DIRECTORY.rglob("*.pth")):
             relative = checkpoint.relative_to(PROJECT_ROOT)
             options.append(ModelOption(str(relative), f"DQN: {relative}"))
@@ -244,6 +258,22 @@ def normalize_genetic_checkpoint(raw_spec: str) -> Path:
     return checkpoint
 
 
+def normalize_bard_checkpoint(raw_spec: str) -> Path:
+    lowered = raw_spec.lower()
+    if lowered == "bard":
+        checkpoint = DEFAULT_BARD_CHECKPOINT
+    else:
+        spec = raw_spec[len("bard:") :] if lowered.startswith("bard:") else raw_spec
+        checkpoint = Path(spec).expanduser()
+        if not checkpoint.is_absolute():
+            checkpoint = PROJECT_ROOT / checkpoint
+    if not checkpoint.is_file():
+        raise ValueError(f"Bard checkpoint not found: {checkpoint}")
+    if checkpoint.suffix.lower() != ".bard":
+        raise ValueError(f"Bard checkpoint must be a .bard file: {checkpoint}")
+    return checkpoint
+
+
 def build_player(spec: str) -> Player:
     stripped = spec.strip()
     normalized = stripped.lower()
@@ -262,6 +292,19 @@ def build_player(spec: str) -> Player:
                 f"Invalid minimax depth {raw_depth!r}; use a positive whole number"
             ) from exc
         return MinimaxPlayer(depth)
+    if (
+        normalized == "bard"
+        or normalized.startswith("bard:")
+        or normalized.endswith(".bard")
+    ):
+        try:
+            from computer2 import Computer3
+        except ImportError as exc:
+            raise RuntimeError(
+                "Bard checkpoints require NumPy and XGBoost. Run the benchmark "
+                "with the same Python environment used to train Bard."
+            ) from exc
+        return Computer3(path=normalize_bard_checkpoint(stripped))
     if (
         normalized.startswith("genetic:")
         or normalized.startswith("ga:")
@@ -370,13 +413,14 @@ def print_results(
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare COSMOS random, greedy, minimax, genetic, and DQN "
+            "Compare COSMOS random, greedy, minimax, Bard, genetic, and DQN "
             "Othello players."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Model specs can be 'random', 'greedy', 'minimax', "
-            "'minimax:DEPTH', 'genetic:PATH.json', or a path to a .pth file.\n"
+            "'minimax:DEPTH', 'bard', 'bard:PATH.bard', "
+            "'genetic:PATH.json', or a path to a .pth file.\n"
             "Omit both players to use the interactive model picker."
         ),
     )
