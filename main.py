@@ -15,8 +15,8 @@ from datetime import datetime,timedelta
 sys.path.append(os.getcwd())
 from game import Game
 #from computer import Computer
-#from computer2 import Computer2 as Computer
-from computer2 import Computer3 as Computer #supervised bot; really bad
+from computer2 import Computer2 as Computer
+#from computer2 import Computer3 as Computer #supervised bot; really bad
 
 class Main:
     GREEN = (34,139,34)
@@ -143,8 +143,9 @@ class Main:
                 val_color = Main.LIGHT_GREEN if value > 0 else (Main.LIGHT_RED if value < 0 else Main.BLACK)
                 surf = self.font.render(val_text, True, val_color)
                 screen.blit(surf, (self.width-180, 180))
-            except Exception:
-                pass
+            except Exception as e:
+                # Print error to console for debugging
+                print(f"Value display error: {e}")
 
     def next_turn(self):
         self.activePlayerIndex = (self.activePlayerIndex+1)%2

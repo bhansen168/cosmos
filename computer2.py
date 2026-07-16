@@ -7,7 +7,7 @@ from computer_supervised import load_agent as load_agent_sup
 
 
 class Computer2(Computer): #incorporates AI model -- use PTH extension
-    PATH = os.getcwd()+"/models/checkpoints/othello_v02_2.0k-sav.pth"
+    PATH = os.getcwd()+"/models/checkpoints/othello_v02_1.0k-sav.pth"
     def __init__(self,game,color):
         super().__init__(game,color)
         self.agent = load_agent(Computer2.PATH)
