@@ -123,12 +123,16 @@ def create_genetic_computer(game,color,checkpoint_path):
 
 
 class ComputerDQN(Computer): #incorporates AI model -- use PTH extension
+    #formerly known as Computer2
     PATH = os.getcwd()+"/models/checkpoints/othello_v02_2.0k-sav.pth"
-    def __init__(self,game,color):
+    def __init__(self,game,color,path):
         super().__init__(game,color)
         from computerRL import load_agent
 
-        self.agent = load_agent(Computer2.PATH)
+
+        if path is None:
+            path = ComputerDQN.PATH
+        self.agent = load_agent(path)
 
     def pick(self):
         from computerRL import encode_state,index_to_coord,legal_moves_to_np_arr
@@ -147,13 +151,14 @@ class ComputerDQN(Computer): #incorporates AI model -- use PTH extension
         return self.agent.get_value_prediction(state, legal_moves)
 
 class ComputerSupervised(Computer):
+    #formerly known as Computer2
     PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","supervised","wthor-kaggle.bard")
     #dataset sourced from Kaggle (CSV) and WTHOR (French Othello Federation)
     def __init__(self,game=None,color=None,path=None):
         super().__init__(game,color)
 
         if path is None:
-            path = Computer3.PATH
+            path = ComputerSupervised.PATH
         self.path = os.path.abspath(path)
         self.agent = load_agent_sup(self.path)
         self.name = f"Bard supervised ({os.path.basename(self.path)})"
