@@ -12,7 +12,7 @@ def parse_csv(file:str):
 
     for game in df["game_moves"]:
         moves = [game[i:i+2] for i in range(0,len(game),2)]
-        movePairs = [(ord(m[0])-97,int(m[1])-1) for m in moves]
+        movePairs = [(ord(m[0])-96,int(m[1])) for m in moves]
         games.append(movePairs)
 
     #convert from hexadecimal to value
