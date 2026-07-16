@@ -52,7 +52,7 @@ class Main:
         
 
     def reset(self):
-        self.game = Game(self.side)
+        self.game = Game(self.side)#never make save=True because then saves empty list
         self.activePlayerIndex = 0
         if self.mode == "computer":
             self.computer = Computer(self.game,Game.WHITE)

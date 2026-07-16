@@ -48,9 +48,11 @@ def play_game(
     black_player: Player,
     white_player: Player,
     rng: random.Random,
+    save: bool = False
 ) -> GameOutcome:
     """Play one complete game with the original Game rules implementation."""
-    game = Game()
+
+    game = Game(save = save)
     players = {BLACK: black_player, WHITE: white_player}
     color = BLACK
     consecutive_passes = 0
@@ -80,6 +82,10 @@ def play_game(
         winner = None
     else:
         winner = BLACK if scores[BLACK] > scores[WHITE] else WHITE
+
+    if game.save:
+        game.save_game()
+        
     return GameOutcome(
         black_score=scores[BLACK],
         white_score=scores[WHITE],
