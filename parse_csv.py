@@ -18,5 +18,5 @@ def parse_csv(file:str):
     #convert from hexadecimal to value
     #each game is generally 120 chars long; 2 chars/move
     #letter, number
-    return game
+    return games
             

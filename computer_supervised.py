@@ -99,8 +99,10 @@ class CompSupervised:
             path = CompSupervised.DATA+"/"+file
             if file.endswith(".wtb"):
                 new = parse_wtb(path)
+                #print("TESTw:",new)
             else:
                 new = parse_csv(path)
+                #print("TESTc:",new)
             games.extend(new)
 
         print(f"Games: {len(games)}")
