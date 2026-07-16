@@ -9,10 +9,12 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBClassifier
+from datetime import datetime,timedelta
 
 
 sys.path.append(os.getcwd())
 from readWTB import parse_wtb
+from parse_csv import parse_csv
 from computerRL import OthelloEnv
 
 def predict_finish(start,amtCompleted):
@@ -22,6 +24,9 @@ def predict_finish(start,amtCompleted):
 
     finish = datetime.now() + timedelta(seconds = totalSecs - secsElapsed)
     return str(finish).split(".")[0]
+
+
+
 
 def index_to_coord(action_idx):
     if isinstance(action_idx,tuple): #already formatted correctly
@@ -89,30 +94,22 @@ def legal_moves_to_np_arr(legal,actionDim):
     return arr
 
 class CompSupervised:
-    WTHOR = os.getcwd()+"/data"
+    DATA = os.getcwd()+"/data"
     
     def __init__(self):
-        self.files = [file for file in os.listdir(CompSupervised.WTHOR) if file.endswith(".wtb")]
+        self.files = [file for file in os.listdir(CompSupervised.DATA) if (file.endswith(".wtb") or file.endswith(".csv"))]
         games = []
         for file in self.files:
-            new = parse_wtb(CompSupervised.WTHOR+"/"+file)
+            path = CompSupervised.DATA+"/"+file
+            if file.endswith(".wtb"):
+                new = parse_wtb(path)
+            else:
+                new = parse_csv(path)
             games.extend(new)
 
-        print(f"Games: {len(games)}")
+        print(f"Games: {len(games):,}")
 
-        '''
-        sample game:
-            [(5, 6), (6, 4), (3, 3), (3, 4), (4, 3), (4, 6), (6, 6), (5, 7), (3, 5), (3, 6), (4, 7), (2, 5),
-             (2, 4), (3, 8), (6, 5), (3, 7), (6, 3), (7, 6), (6, 7), (5, 3), (4, 2), (7, 5), (4, 8), (6, 8),
-             (5, 8), (1, 3), (7, 4), (2, 3), (8, 6), (8, 5), (1, 5), (8, 7), (1, 6), (8, 4), (2, 6), (6, 2),
-             (7, 3), (5, 2), (8, 3), (8, 2), (4, 1), (5, 1), (2, 7), (3, 1), (7, 7), (1, 4), (2, 8), (8, 8),
-             (7, 8), (3, 2), (2, 2), (1, 8), (1, 7), (2, 1), (6, 1), (7, 1), (1, 1), (1, 2), (8, 1), (7, 2)]
-        '''
-
-        #for y in range(8):
-        #    for x in range(8):
-        #        print(f"TEST: x={x}, y={y}, act={coord_to_index(y,x)}")
-
+        print("Formatting data...")
         self.format_data(games)
 
     def format_data(self, games):
@@ -149,7 +146,8 @@ class CompSupervised:
                 
             self.games.append(gameFormatted)
         #print("Formatted data!")
-    def train(self, savePath="model.bard"):
+    def train(self, savePath="model.bard"): 
+        print("Training...")
         X_list = []
         y_list = []
         
@@ -263,4 +261,4 @@ def load_agent(file):
 
 if __name__ == "__main__":
     cs = CompSupervised()
-    cs.train(savePath=os.getcwd()+"/models/demoPlus.bard")
+    cs.train(savePath=os.getcwd()+"/models/demo++.bard")

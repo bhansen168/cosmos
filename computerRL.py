@@ -10,8 +10,7 @@ from datetime import datetime,timedelta
 
 sys.path.append(os.getcwd())
 from game import Game
-from computer import Computer
-from model_adapters import create_minimax_computer, create_genetic_computer
+from computer import Computer,create_minimax_computer,create_genetic_computer
 
 MUTE_PRINTS = True
 EPOCHS = 10000
@@ -28,13 +27,13 @@ def predict_finish(start,amtCompleted):
 
 
 class QNet(nn.Module):
-    def __init__(self,params=64,actions=64):
+    def __init__(self,params=64,actions=64,hidden_size=128):
         super().__init__()
         
-        self.layer1 = nn.Linear(in_features=params, out_features=128)
-        self.layer2 = nn.Linear(in_features=128, out_features=128)
-        self.layer3 = nn.Linear(in_features=128, out_features=128)
-        self.layer4 = nn.Linear(in_features=128, out_features=actions)
+        self.layer1 = nn.Linear(in_features=params, out_features=hidden_size)
+        self.layer2 = nn.Linear(in_features=hidden_size, out_features=hidden_size)
+        self.layer3 = nn.Linear(in_features=hidden_size, out_features=hidden_size)
+        self.layer4 = nn.Linear(in_features=hidden_size, out_features=actions)
 
     def forward(self, x):
         x = F.relu(self.layer1(x)) #performs relu ops in between
@@ -59,12 +58,12 @@ class ReplayBuffer:
 
 
 class Agent:
-    def __init__(self, stateDim, actionDim, lr=1e-3, gamma=0.99):
+    def __init__(self, stateDim, actionDim, lr=1e-3, gamma=0.99, hidden_size=128):
         self.actionDim = actionDim
         self.gamma = gamma
         
-        self.policyNet = QNet(stateDim, actionDim)
-        self.targetNet = QNet(stateDim, actionDim)
+        self.policyNet = QNet(stateDim, actionDim, hidden_size)
+        self.targetNet = QNet(stateDim, actionDim, hidden_size)
         self.targetNet.load_state_dict(self.policyNet.state_dict())
 
         self.id = 1 
@@ -360,11 +359,23 @@ class OthelloEnv(Game):
         
 
 def load_agent(file):
-    env = OthelloEnv()
-    trained_agent = Agent(env.state_dim, env.action_dim)
+    try:
+        weights = torch.load(file,map_location="cpu",weights_only=True)
+    except TypeError:
+        weights = torch.load(file,map_location="cpu")
 
-    # 2. Load the file from disk and push the weights into the network
-    weights = torch.load(file)
+    try:
+        hidden_size = int(weights["layer1.weight"].shape[0])
+        input_size = int(weights["layer1.weight"].shape[1])
+        output_size = int(weights["layer4.weight"].shape[0])
+    except (KeyError,TypeError,IndexError,AttributeError) as exc:
+        raise ValueError(f"Unrecognized DQN checkpoint: {file}") from exc
+    if input_size != 64 or output_size != 64:
+        raise ValueError(f"DQN checkpoint must use 64 inputs and outputs: {file}")
+
+    env = OthelloEnv()
+    trained_agent = Agent(env.state_dim,env.action_dim,hidden_size=hidden_size)
+
     trained_agent.policyNet.load_state_dict(weights)
 
     # 3. CRITICAL: Switch the network to evaluation mode 
