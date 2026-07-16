@@ -15,8 +15,8 @@ from datetime import datetime,timedelta
 sys.path.append(os.getcwd())
 from game import Game
 #from computer import Computer
-#from computer2 import Computer2 as Computer
-from computer2 import Computer3 as Computer #supervised bot; really bad
+#from computer2 import ComputerDQN as Computer
+from computer2 import ComputerSupervised as Computer #supervised bot; really bad
 
 class Main:
     GREEN = (34,139,34)
