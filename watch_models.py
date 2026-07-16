@@ -237,6 +237,8 @@ class SpectatorApp:
     MUTED = (103, 111, 122)
     PANEL = (255, 255, 255)
     RED = (187, 53, 53)
+    PICKER_VISIBLE_OPTIONS = 7
+    PICKER_ROW_HEIGHT = 38
 
     def __init__(
         self,
@@ -273,6 +275,8 @@ class SpectatorApp:
         }
         self.picker_color = BLACK
         self.picker_open = False
+        self.picker_dropdown_color: int | None = None
+        self.picker_scroll_offset = 0
         self.picker_message = ""
         self.match = SpectatorMatch()
         self.rng = random.Random(seed)
@@ -291,6 +295,53 @@ class SpectatorApp:
             if option.spec.lower() == normalized:
                 return index
         return 0
+
+    @staticmethod
+    def _picker_dialog_rect() -> Any:
+        return pygame.Rect(120, 60, 840, 640)
+
+    def _picker_dropdown_rect(self, color: int) -> Any:
+        dialog = self._picker_dialog_rect()
+        y = dialog.y + (112 if color == BLACK else 227)
+        return pygame.Rect(dialog.x + 32, y, dialog.width - 64, 54)
+
+    def _picker_list_rect(self, color: int) -> Any:
+        dropdown = self._picker_dropdown_rect(color)
+        visible_count = min(self.PICKER_VISIBLE_OPTIONS, len(self.model_options))
+        return pygame.Rect(
+            dropdown.x,
+            dropdown.bottom + 4,
+            dropdown.width,
+            visible_count * self.PICKER_ROW_HEIGHT,
+        )
+
+    def _picker_button_rect(self, start: bool) -> Any:
+        dialog = self._picker_dialog_rect()
+        width = 170
+        x = dialog.right - 32 - width
+        if not start:
+            x -= width + 14
+        return pygame.Rect(x, dialog.bottom - 70, width, 42)
+
+    def _open_dropdown(self, color: int) -> None:
+        self.picker_color = color
+        self.picker_dropdown_color = color
+        max_offset = max(0, len(self.model_options) - self.PICKER_VISIBLE_OPTIONS)
+        selected = self.picker_indices[color]
+        self.picker_scroll_offset = max(
+            0,
+            min(selected - self.PICKER_VISIBLE_OPTIONS // 2, max_offset),
+        )
+        self.picker_message = ""
+
+    def _ensure_picker_selection_visible(self) -> None:
+        if self.picker_dropdown_color is None:
+            return
+        selected = self.picker_indices[self.picker_dropdown_color]
+        if selected < self.picker_scroll_offset:
+            self.picker_scroll_offset = selected
+        elif selected >= self.picker_scroll_offset + self.PICKER_VISIBLE_OPTIONS:
+            self.picker_scroll_offset = selected - self.PICKER_VISIBLE_OPTIONS + 1
 
     @staticmethod
     def _fit_text(font: Any, text: str, width: int) -> str:
@@ -440,6 +491,8 @@ class SpectatorApp:
             WHITE: self._model_index(self.player_specs[WHITE]),
         }
         self.picker_color = BLACK
+        self.picker_dropdown_color = None
+        self.picker_scroll_offset = 0
         self.picker_message = ""
         self.picker_open = True
 
@@ -448,6 +501,7 @@ class SpectatorApp:
             color: self.model_options[self.picker_indices[color]]
             for color in (BLACK, WHITE)
         }
+        self.picker_dropdown_color = None
         self.picker_message = "Loading selected models..."
         self.draw()
         try:
@@ -469,29 +523,77 @@ class SpectatorApp:
 
     def _handle_picker_event(self, event: Any) -> None:
         if event.type == pygame.MOUSEWHEEL:
-            count = len(self.model_options)
-            self.picker_indices[self.picker_color] = (
-                self.picker_indices[self.picker_color] - event.y
-            ) % count
-            self.picker_message = ""
+            if self.picker_dropdown_color is not None:
+                max_offset = max(
+                    0,
+                    len(self.model_options) - self.PICKER_VISIBLE_OPTIONS,
+                )
+                self.picker_scroll_offset = max(
+                    0,
+                    min(self.picker_scroll_offset - event.y, max_offset),
+                )
+            return
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            position = event.pos
+            if self.picker_dropdown_color is not None:
+                open_color = self.picker_dropdown_color
+                if self._picker_dropdown_rect(open_color).collidepoint(position):
+                    self.picker_dropdown_color = None
+                    return
+                list_rect = self._picker_list_rect(self.picker_dropdown_color)
+                if list_rect.collidepoint(position):
+                    row = (position[1] - list_rect.y) // self.PICKER_ROW_HEIGHT
+                    index = self.picker_scroll_offset + row
+                    if index < len(self.model_options):
+                        self.picker_indices[self.picker_dropdown_color] = index
+                        self.picker_dropdown_color = None
+                        self.picker_message = ""
+                    return
+                self.picker_dropdown_color = None
+
+            for color in (BLACK, WHITE):
+                if self._picker_dropdown_rect(color).collidepoint(position):
+                    self._open_dropdown(color)
+                    return
+
+            if self._picker_button_rect(True).collidepoint(position):
+                self._start_picker_match()
+            elif self._picker_button_rect(False).collidepoint(position):
+                self.picker_open = False
+                self.picker_message = ""
             return
         if event.type != pygame.KEYDOWN:
             return
         if event.key == pygame.K_ESCAPE:
-            self.picker_open = False
-            self.picker_message = ""
+            if self.picker_dropdown_color is not None:
+                self.picker_dropdown_color = None
+            else:
+                self.picker_open = False
+                self.picker_message = ""
         elif event.key in (pygame.K_TAB, pygame.K_LEFT, pygame.K_RIGHT):
             self.picker_color = opponent(self.picker_color)
+            self.picker_dropdown_color = None
             self.picker_message = ""
         elif event.key in (pygame.K_UP, pygame.K_DOWN):
+            if self.picker_dropdown_color is None:
+                self._open_dropdown(self.picker_color)
             amount = -1 if event.key == pygame.K_UP else 1
             count = len(self.model_options)
             self.picker_indices[self.picker_color] = (
                 self.picker_indices[self.picker_color] + amount
             ) % count
+            self._ensure_picker_selection_visible()
             self.picker_message = ""
         elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            self._start_picker_match()
+            if self.picker_dropdown_color is None:
+                self._start_picker_match()
+            else:
+                self.picker_dropdown_color = None
+        elif event.key == pygame.K_SPACE:
+            if self.picker_dropdown_color is None:
+                self._open_dropdown(self.picker_color)
+            else:
+                self.picker_dropdown_color = None
 
     def _handle_event(self, event: Any) -> None:
         if event.type == pygame.QUIT:
@@ -746,63 +848,100 @@ class SpectatorApp:
         shade.fill((0, 0, 0, 155))
         self.screen.blit(shade, (0, 0))
 
-        dialog = pygame.Rect(145, 145, 790, 450)
+        dialog = self._picker_dialog_rect()
         pygame.draw.rect(self.screen, self.PANEL, dialog, border_radius=14)
         pygame.draw.rect(self.screen, self.GRID, dialog, width=2, border_radius=14)
         title = self.title_font.render("Choose a new matchup", True, self.TEXT)
-        self.screen.blit(title, (dialog.x + 30, dialog.y + 24))
+        self.screen.blit(title, (dialog.x + 32, dialog.y + 25))
 
-        y = dialog.y + 90
+        mouse_position = pygame.mouse.get_pos()
         for color in (BLACK, WHITE):
-            active = color == self.picker_color
-            card = pygame.Rect(dialog.x + 30, y, dialog.width - 60, 105)
-            pygame.draw.rect(
-                self.screen,
-                (255, 248, 224) if active else (248, 249, 250),
-                card,
-                border_radius=9,
-            )
-            pygame.draw.rect(
-                self.screen,
-                self.GOLD if active else (205, 210, 216),
-                card,
-                width=3 if active else 1,
-                border_radius=9,
-            )
+            dropdown = self._picker_dropdown_rect(color)
+            active = color == self.picker_color or color == self.picker_dropdown_color
             self.screen.blit(
                 self.heading_font.render(
                     f"{COLOR_NAMES[color]} model",
                     True,
                     self.TEXT,
                 ),
-                (card.x + 18, card.y + 14),
+                (dropdown.x, dropdown.y - 30),
+            )
+            pygame.draw.rect(
+                self.screen,
+                (255, 250, 232) if active else (248, 249, 250),
+                dropdown,
+                border_radius=7,
+            )
+            pygame.draw.rect(
+                self.screen,
+                self.GOLD if active else (205, 210, 216),
+                dropdown,
+                width=2 if active else 1,
+                border_radius=7,
             )
             option = self.model_options[self.picker_indices[color]]
             option_label = self._fit_text(
                 self.body_font,
                 option.label,
-                card.width - 36,
+                dropdown.width - 64,
             )
             self.screen.blit(
-                self.body_font.render(option_label, True, self.MUTED),
-                (card.x + 18, card.y + 55),
+                self.body_font.render(option_label, True, self.TEXT),
+                (dropdown.x + 16, dropdown.y + 16),
             )
-            y += 120
+            arrow_x = dropdown.right - 26
+            arrow_y = dropdown.centery
+            pygame.draw.polygon(
+                self.screen,
+                self.MUTED,
+                (
+                    (arrow_x - 6, arrow_y - 3),
+                    (arrow_x + 6, arrow_y - 3),
+                    (arrow_x, arrow_y + 5),
+                ),
+            )
 
         instructions = (
-            "Tab or Left/Right: switch color    Up/Down or wheel: choose model",
-            "Enter: load models and start paused    Esc: cancel",
+            "Click a dropdown, then scroll and click a model.",
+            "Keyboard: Tab switches color, Space opens, arrows select.",
         )
         for index, line in enumerate(instructions):
             self.screen.blit(
                 self.small_font.render(line, True, self.MUTED),
-                (dialog.x + 30, dialog.y + 345 + index * 22),
+                (dialog.x + 32, dialog.y + 350 + index * 22),
             )
+
+        for is_start, label in ((False, "Cancel"), (True, "Start new game")):
+            button = self._picker_button_rect(is_start)
+            hovered = button.collidepoint(mouse_position)
+            if is_start:
+                fill = (35, 116, 69) if hovered else self.BOARD_GREEN
+                text_color = self.PANEL
+            else:
+                fill = (232, 234, 237) if hovered else (242, 243, 245)
+                text_color = self.TEXT
+            pygame.draw.rect(self.screen, fill, button, border_radius=7)
+            pygame.draw.rect(
+                self.screen,
+                self.GRID if is_start else (195, 200, 206),
+                button,
+                width=1,
+                border_radius=7,
+            )
+            text_surface = self.body_font.render(label, True, text_color)
+            self.screen.blit(
+                text_surface,
+                (
+                    button.centerx - text_surface.get_width() // 2,
+                    button.centery - text_surface.get_height() // 2,
+                ),
+            )
+
         if self.picker_message:
             message = self._fit_text(
                 self.small_font,
                 self.picker_message,
-                dialog.width - 60,
+                dialog.width - 64,
             )
             message_color = (
                 self.RED
@@ -811,8 +950,63 @@ class SpectatorApp:
             )
             self.screen.blit(
                 self.small_font.render(message, True, message_color),
-                (dialog.x + 30, dialog.y + 407),
+                (dialog.x + 32, dialog.bottom - 112),
             )
+
+        if self.picker_dropdown_color is not None:
+            list_rect = self._picker_list_rect(self.picker_dropdown_color)
+            pygame.draw.rect(self.screen, self.PANEL, list_rect, border_radius=5)
+            pygame.draw.rect(self.screen, self.GRID, list_rect, width=1, border_radius=5)
+            visible_count = min(self.PICKER_VISIBLE_OPTIONS, len(self.model_options))
+            selected_index = self.picker_indices[self.picker_dropdown_color]
+            for row in range(visible_count):
+                index = self.picker_scroll_offset + row
+                if index >= len(self.model_options):
+                    break
+                row_rect = pygame.Rect(
+                    list_rect.x + 1,
+                    list_rect.y + row * self.PICKER_ROW_HEIGHT + 1,
+                    list_rect.width - 2,
+                    self.PICKER_ROW_HEIGHT,
+                )
+                if index == selected_index:
+                    pygame.draw.rect(self.screen, (255, 245, 210), row_rect)
+                elif row_rect.collidepoint(mouse_position):
+                    pygame.draw.rect(self.screen, (239, 243, 246), row_rect)
+                option_label = self._fit_text(
+                    self.body_font,
+                    self.model_options[index].label,
+                    row_rect.width - 34,
+                )
+                self.screen.blit(
+                    self.body_font.render(option_label, True, self.TEXT),
+                    (row_rect.x + 12, row_rect.y + 9),
+                )
+
+            if len(self.model_options) > visible_count:
+                track = pygame.Rect(
+                    list_rect.right - 9,
+                    list_rect.y + 4,
+                    5,
+                    list_rect.height - 8,
+                )
+                pygame.draw.rect(self.screen, (226, 229, 232), track, border_radius=3)
+                thumb_height = max(
+                    20,
+                    int(track.height * visible_count / len(self.model_options)),
+                )
+                max_offset = len(self.model_options) - visible_count
+                thumb_y = track.y + int(
+                    (track.height - thumb_height)
+                    * self.picker_scroll_offset
+                    / max_offset
+                )
+                pygame.draw.rect(
+                    self.screen,
+                    self.MUTED,
+                    pygame.Rect(track.x, thumb_y, track.width, thumb_height),
+                    border_radius=3,
+                )
 
     def draw(self) -> None:
         self.screen.fill(self.BACKGROUND)
