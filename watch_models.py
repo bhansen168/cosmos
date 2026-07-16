@@ -26,6 +26,7 @@ from benchmark_models import (
     print_model_list,
     prompt_for_model,
     DQNPlayer,
+    ModelOption,
 )
 from game import Game, LegalMove
 from othello_engine import (
@@ -62,6 +63,15 @@ class TurnRecord:
         )
 
 
+@dataclass(frozen=True)
+class PositionSnapshot:
+    board: tuple[tuple[int, ...], ...]
+    current_color: int
+    last_move: tuple[int, int] | None
+    game_over: bool
+    winner: int | None
+
+
 class SpectatorMatch:
     """UI-independent match state used by the real-time viewer."""
 
@@ -75,6 +85,57 @@ class SpectatorMatch:
         self.history: list[TurnRecord] = []
         self.game_over = False
         self.winner: int | None = None
+        self.timeline: list[PositionSnapshot] = [self._snapshot()]
+        self.timeline_index = 0
+
+    @property
+    def at_latest(self) -> bool:
+        return self.timeline_index == len(self.timeline) - 1
+
+    @property
+    def visible_history(self) -> list[TurnRecord]:
+        return self.history[: self.timeline_index]
+
+    def _snapshot(self) -> PositionSnapshot:
+        return PositionSnapshot(
+            board=tuple(tuple(row) for row in self.game.board),
+            current_color=self.current_color,
+            last_move=self.last_move,
+            game_over=self.game_over,
+            winner=self.winner,
+        )
+
+    def _restore(self, snapshot: PositionSnapshot) -> None:
+        self.game = Game()
+        self.game.board = [list(row) for row in snapshot.board]
+        self.game.last = (
+            None if snapshot.last_move is None else list(snapshot.last_move)
+        )
+        self.current_color = snapshot.current_color
+        self.last_move = snapshot.last_move
+        self.game_over = snapshot.game_over
+        self.winner = snapshot.winner
+
+    def seek(self, timeline_index: int) -> bool:
+        destination = max(0, min(timeline_index, len(self.timeline) - 1))
+        if destination == self.timeline_index:
+            return False
+        self.timeline_index = destination
+        self._restore(self.timeline[destination])
+        return True
+
+    def seek_relative(self, amount: int) -> bool:
+        return self.seek(self.timeline_index + amount)
+
+    def _prepare_branch(self) -> None:
+        if self.at_latest:
+            return
+        self.history = self.history[: self.timeline_index]
+        self.timeline = self.timeline[: self.timeline_index + 1]
+
+    def _append_snapshot(self) -> None:
+        self.timeline.append(self._snapshot())
+        self.timeline_index = len(self.timeline) - 1
 
     def position_key(self) -> tuple[int, tuple[tuple[int, ...], ...]]:
         return self.current_color, tuple(tuple(row) for row in self.game.board)
@@ -110,6 +171,7 @@ class SpectatorMatch:
     def apply_move(self, coordinate: tuple[int, int]) -> None:
         if self.game_over:
             raise ValueError("The game is already over")
+        self._prepare_branch()
         legal_by_coordinate = {
             (move.x, move.y): move for move in self.game.legal_moves(self.current_color)
         }
@@ -128,10 +190,12 @@ class SpectatorMatch:
             self._finish()
         else:
             self.current_color = next_color
+        self._append_snapshot()
 
     def pass_turn(self) -> None:
         if self.game_over:
             raise ValueError("The game is already over")
+        self._prepare_branch()
         if self.game.legal_moves(self.current_color):
             raise ValueError(f"{COLOR_NAMES[self.current_color]} has a legal move")
 
@@ -142,6 +206,7 @@ class SpectatorMatch:
             self._finish()
         else:
             self.current_color = next_color
+        self._append_snapshot()
 
 
 @dataclass
@@ -172,6 +237,8 @@ class SpectatorApp:
     MUTED = (103, 111, 122)
     PANEL = (255, 255, 255)
     RED = (187, 53, 53)
+    PICKER_VISIBLE_OPTIONS = 7
+    PICKER_ROW_HEIGHT = 38
 
     def __init__(
         self,
@@ -180,6 +247,9 @@ class SpectatorApp:
         delay: float,
         seed: int,
         start_paused: bool,
+        model_options: Sequence[ModelOption],
+        black_spec: str,
+        white_spec: str,
     ) -> None:
         assert pygame is not None
         pygame.init()
@@ -197,9 +267,21 @@ class SpectatorApp:
         self.clock = pygame.time.Clock()
 
         self.players = {BLACK: black_player, WHITE: white_player}
+        self.player_specs = {BLACK: black_spec, WHITE: white_spec}
+        self.model_options = list(model_options)
+        self.picker_indices = {
+            BLACK: self._model_index(black_spec),
+            WHITE: self._model_index(white_spec),
+        }
+        self.picker_color = BLACK
+        self.picker_open = False
+        self.picker_dropdown_color: int | None = None
+        self.picker_scroll_offset = 0
+        self.picker_message = ""
         self.match = SpectatorMatch()
         self.rng = random.Random(seed)
         self.delay = max(0.0, delay)
+        self.previous_delay = self.delay or 0.75
         self.paused = start_paused
         self.step_requests = 0
         self.next_action_at = time.monotonic() + self.delay
@@ -207,14 +289,68 @@ class SpectatorApp:
         self.message = ""
         self.running = True
 
+    def _model_index(self, spec: str) -> int:
+        normalized = spec.strip().lower()
+        for index, option in enumerate(self.model_options):
+            if option.spec.lower() == normalized:
+                return index
+        return 0
+
+    @staticmethod
+    def _picker_dialog_rect() -> Any:
+        return pygame.Rect(120, 60, 840, 640)
+
+    def _picker_dropdown_rect(self, color: int) -> Any:
+        dialog = self._picker_dialog_rect()
+        y = dialog.y + (112 if color == BLACK else 227)
+        return pygame.Rect(dialog.x + 32, y, dialog.width - 64, 54)
+
+    def _picker_list_rect(self, color: int) -> Any:
+        dropdown = self._picker_dropdown_rect(color)
+        visible_count = min(self.PICKER_VISIBLE_OPTIONS, len(self.model_options))
+        return pygame.Rect(
+            dropdown.x,
+            dropdown.bottom + 4,
+            dropdown.width,
+            visible_count * self.PICKER_ROW_HEIGHT,
+        )
+
+    def _picker_button_rect(self, start: bool) -> Any:
+        dialog = self._picker_dialog_rect()
+        width = 170
+        x = dialog.right - 32 - width
+        if not start:
+            x -= width + 14
+        return pygame.Rect(x, dialog.bottom - 70, width, 42)
+
+    def _open_dropdown(self, color: int) -> None:
+        self.picker_color = color
+        self.picker_dropdown_color = color
+        max_offset = max(0, len(self.model_options) - self.PICKER_VISIBLE_OPTIONS)
+        selected = self.picker_indices[color]
+        self.picker_scroll_offset = max(
+            0,
+            min(selected - self.PICKER_VISIBLE_OPTIONS // 2, max_offset),
+        )
+        self.picker_message = ""
+
+    def _ensure_picker_selection_visible(self) -> None:
+        if self.picker_dropdown_color is None:
+            return
+        selected = self.picker_indices[self.picker_dropdown_color]
+        if selected < self.picker_scroll_offset:
+            self.picker_scroll_offset = selected
+        elif selected >= self.picker_scroll_offset + self.PICKER_VISIBLE_OPTIONS:
+            self.picker_scroll_offset = selected - self.PICKER_VISIBLE_OPTIONS + 1
+
     @staticmethod
     def _fit_text(font: Any, text: str, width: int) -> str:
         if font.size(text)[0] <= width:
             return text
         shortened = text
-        while shortened and font.size(shortened + "…")[0] > width:
+        while shortened and font.size(shortened + "...")[0] > width:
             shortened = shortened[:-1]
-        return shortened + "…"
+        return shortened + "..."
 
     def _consume_step_if_needed(self) -> bool:
         if not self.paused:
@@ -287,7 +423,12 @@ class SpectatorApp:
 
     def _advance_when_ready(self) -> None:
         self._poll_pending_move()
-        if self.pending is not None or self.match.game_over:
+        if (
+            self.pending is not None
+            or self.match.game_over
+            or not self.match.at_latest
+            or self.picker_open
+        ):
             return
         if not self.paused and time.monotonic() < self.next_action_at:
             return
@@ -303,39 +444,214 @@ class SpectatorApp:
 
     def _change_speed(self, amount: float) -> None:
         self.delay = _clamp_delay(self.delay + amount)
+        if self.delay > 0:
+            self.previous_delay = self.delay
         self.next_action_at = min(
             self.next_action_at,
             time.monotonic() + self.delay,
         )
 
+    def _toggle_fastest(self) -> None:
+        if self.delay == 0:
+            self.delay = self.previous_delay
+        else:
+            self.previous_delay = self.delay
+            self.delay = 0.0
+        self.next_action_at = time.monotonic() + self.delay
+
+    def _restart_match(self, message: str) -> None:
+        self.match.reset()
+        self.step_requests = 0
+        self.next_action_at = time.monotonic() + self.delay
+        self.message = message
+
+    def _seek_history(self, destination: int) -> None:
+        if self.pending is not None:
+            self.message = "Wait for the current model calculation before reviewing."
+            return
+        if self.match.seek(destination):
+            self.paused = True
+            self.step_requests = 0
+            self.message = (
+                f"Reviewing turn {self.match.timeline_index}/"
+                f"{len(self.match.timeline) - 1}."
+            )
+
+    def _open_model_picker(self) -> None:
+        if self.pending is not None:
+            self.message = "Wait for the current model calculation before changing models."
+            return
+        if not self.model_options:
+            self.message = "No models are available."
+            return
+        self.paused = True
+        self.step_requests = 0
+        self.picker_indices = {
+            BLACK: self._model_index(self.player_specs[BLACK]),
+            WHITE: self._model_index(self.player_specs[WHITE]),
+        }
+        self.picker_color = BLACK
+        self.picker_dropdown_color = None
+        self.picker_scroll_offset = 0
+        self.picker_message = ""
+        self.picker_open = True
+
+    def _start_picker_match(self) -> None:
+        selected = {
+            color: self.model_options[self.picker_indices[color]]
+            for color in (BLACK, WHITE)
+        }
+        self.picker_dropdown_color = None
+        self.picker_message = "Loading selected models..."
+        self.draw()
+        try:
+            players = {
+                color: build_player(selected[color].spec)
+                for color in (BLACK, WHITE)
+            }
+        except (OSError, RuntimeError, ValueError) as exc:
+            self.picker_message = f"Could not load model: {exc}"
+            return
+
+        self.players = players
+        self.player_specs = {
+            color: selected[color].spec for color in (BLACK, WHITE)
+        }
+        self.picker_open = False
+        self.paused = True
+        self._restart_match("New matchup loaded. Press Space to start or N to step.")
+
+    def _handle_picker_event(self, event: Any) -> None:
+        if event.type == pygame.MOUSEWHEEL:
+            if self.picker_dropdown_color is not None:
+                max_offset = max(
+                    0,
+                    len(self.model_options) - self.PICKER_VISIBLE_OPTIONS,
+                )
+                self.picker_scroll_offset = max(
+                    0,
+                    min(self.picker_scroll_offset - event.y, max_offset),
+                )
+            return
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            position = event.pos
+            if self.picker_dropdown_color is not None:
+                open_color = self.picker_dropdown_color
+                if self._picker_dropdown_rect(open_color).collidepoint(position):
+                    self.picker_dropdown_color = None
+                    return
+                list_rect = self._picker_list_rect(self.picker_dropdown_color)
+                if list_rect.collidepoint(position):
+                    row = (position[1] - list_rect.y) // self.PICKER_ROW_HEIGHT
+                    index = self.picker_scroll_offset + row
+                    if index < len(self.model_options):
+                        self.picker_indices[self.picker_dropdown_color] = index
+                        self.picker_dropdown_color = None
+                        self.picker_message = ""
+                    return
+                self.picker_dropdown_color = None
+
+            for color in (BLACK, WHITE):
+                if self._picker_dropdown_rect(color).collidepoint(position):
+                    self._open_dropdown(color)
+                    return
+
+            if self._picker_button_rect(True).collidepoint(position):
+                self._start_picker_match()
+            elif self._picker_button_rect(False).collidepoint(position):
+                self.picker_open = False
+                self.picker_message = ""
+            return
+        if event.type != pygame.KEYDOWN:
+            return
+        if event.key == pygame.K_ESCAPE:
+            if self.picker_dropdown_color is not None:
+                self.picker_dropdown_color = None
+            else:
+                self.picker_open = False
+                self.picker_message = ""
+        elif event.key in (pygame.K_TAB, pygame.K_LEFT, pygame.K_RIGHT):
+            self.picker_color = opponent(self.picker_color)
+            self.picker_dropdown_color = None
+            self.picker_message = ""
+        elif event.key in (pygame.K_UP, pygame.K_DOWN):
+            if self.picker_dropdown_color is None:
+                self._open_dropdown(self.picker_color)
+            amount = -1 if event.key == pygame.K_UP else 1
+            count = len(self.model_options)
+            self.picker_indices[self.picker_color] = (
+                self.picker_indices[self.picker_color] + amount
+            ) % count
+            self._ensure_picker_selection_visible()
+            self.picker_message = ""
+        elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if self.picker_dropdown_color is None:
+                self._start_picker_match()
+            else:
+                self.picker_dropdown_color = None
+        elif event.key == pygame.K_SPACE:
+            if self.picker_dropdown_color is None:
+                self._open_dropdown(self.picker_color)
+            else:
+                self.picker_dropdown_color = None
+
     def _handle_event(self, event: Any) -> None:
         if event.type == pygame.QUIT:
             self.running = False
+            return
+        if self.picker_open:
+            self._handle_picker_event(event)
+            return
+        if event.type == pygame.MOUSEWHEEL:
+            amount = -event.y * (5 if pygame.key.get_mods() & pygame.KMOD_SHIFT else 1)
+            self._seek_history(self.match.timeline_index + amount)
             return
         if event.type != pygame.KEYDOWN:
             return
         if event.key == pygame.K_ESCAPE:
             self.running = False
         elif event.key == pygame.K_SPACE:
+            if not self.match.at_latest:
+                self.match.seek(len(self.match.timeline) - 1)
+                self.message = "Returned to the live position."
             self.paused = not self.paused
             self.step_requests = 0
             if not self.paused:
                 self.next_action_at = time.monotonic()
-        elif event.key in (pygame.K_RIGHT, pygame.K_n):
+        elif event.key == pygame.K_LEFT:
+            self._seek_history(self.match.timeline_index - 1)
+        elif event.key == pygame.K_RIGHT:
+            if self.match.at_latest:
+                self.paused = True
+                self.step_requests += 1
+            else:
+                self._seek_history(self.match.timeline_index + 1)
+        elif event.key == pygame.K_n:
+            if not self.match.at_latest:
+                self.match.seek(len(self.match.timeline) - 1)
             self.paused = True
             self.step_requests += 1
+        elif event.key == pygame.K_HOME:
+            self._seek_history(0)
+        elif event.key == pygame.K_END:
+            self._seek_history(len(self.match.timeline) - 1)
+        elif event.key == pygame.K_PAGEUP:
+            self._seek_history(self.match.timeline_index - 5)
+        elif event.key == pygame.K_PAGEDOWN:
+            self._seek_history(self.match.timeline_index + 5)
         elif event.key in (pygame.K_UP, pygame.K_EQUALS, pygame.K_KP_PLUS):
             self._change_speed(-0.10)
         elif event.key in (pygame.K_DOWN, pygame.K_MINUS, pygame.K_KP_MINUS):
             self._change_speed(0.10)
+        elif event.key == pygame.K_f:
+            self._toggle_fastest()
         elif event.key == pygame.K_r:
             if self.pending is None:
-                self.match.reset()
-                self.step_requests = 0
-                self.next_action_at = time.monotonic() + self.delay
-                self.message = "New game started."
+                self._restart_match("New game started with the same models.")
             else:
                 self.message = "Wait for the current model calculation before restarting."
+        elif event.key == pygame.K_m:
+            self._open_model_picker()
 
     def _draw_board(self) -> None:
         board_rect = pygame.Rect(
@@ -417,6 +733,12 @@ class SpectatorApp:
     def _status_text(self) -> tuple[str, tuple[int, int, int]]:
         if self.message.startswith("Model error"):
             return self.message, self.RED
+        if not self.match.at_latest:
+            return (
+                f"Reviewing turn {self.match.timeline_index}/"
+                f"{len(self.match.timeline) - 1}",
+                self.GOLD,
+            )
         if self.match.game_over:
             if self.match.winner is None:
                 return "Game over — draw", self.TEXT
@@ -451,7 +773,12 @@ class SpectatorApp:
             self.screen.blit(self.body_font.render(model_name, True, self.MUTED), (x, y))
             y += 22
             # Show DQN value prediction for the current player if applicable
-            if color == self.match.current_color and isinstance(self.players[color], DQNPlayer):
+            if (
+                color == self.match.current_color
+                and self.match.at_latest
+                and self.pending is None
+                and isinstance(self.players[color], DQNPlayer)
+            ):
                 try:
                     value = self.players[color].get_value_prediction(self.match.game, color)
                     val_text = f"Value: {value:+.3f}"
@@ -468,42 +795,225 @@ class SpectatorApp:
         y += 35
         speed = "fastest" if self.delay == 0 else f"{self.delay:.2f}s between turns"
         self.screen.blit(self.body_font.render(f"Speed: {speed}", True, self.MUTED), (x, y))
-        y += 37
+        y += 23
+        timeline_state = "LIVE" if self.match.at_latest else "REVIEW"
+        timeline_text = (
+            f"Turn: {self.match.timeline_index}/{len(self.match.timeline) - 1} "
+            f"[{timeline_state}]"
+        )
+        self.screen.blit(self.small_font.render(timeline_text, True, self.MUTED), (x, y))
+        y += 32
 
         self.screen.blit(self.heading_font.render("Recent turns", True, self.TEXT), (x, y))
         y += 28
-        recent = self.match.history[-12:]
+        recent = self.match.visible_history[-5:]
         if not recent:
             self.screen.blit(self.body_font.render("No moves yet", True, self.MUTED), (x, y))
             y += 22
         else:
             for record in recent:
-                line = self.small_font.render(record.text, True, self.TEXT)
+                line_color = (
+                    self.GOLD
+                    if record.turn == self.match.timeline_index
+                    else self.TEXT
+                )
+                line = self.small_font.render(record.text, True, line_color)
                 self.screen.blit(line, (x, y))
                 y += 21
 
-        controls_y = 585
+        controls_y = 510
         self.screen.blit(self.heading_font.render("Controls", True, self.TEXT), (x, controls_y))
         controls = (
-            "Space   Pause / resume",
-            "→ or N  Play one turn",
-            "↑ / +   Faster",
-            "↓ / −   Slower",
-            "R       Restart",
-            "Esc     Close",
+            "Space       Pause / return live",
+            "Left/Right  Review previous / next",
+            "Home/End    First / live position",
+            "Wheel/PgUp  Review 1 / 5 turns",
+            "N           Play one live turn",
+            "Up/Down     Faster / slower",
+            "F           Toggle fastest speed",
+            "R           New game, same models",
+            "M           Choose models + new game",
+            "Esc         Close",
         )
         for index, text in enumerate(controls):
             line = self.small_font.render(text, True, self.MUTED)
-            self.screen.blit(line, (x, controls_y + 29 + index * 18))
+            self.screen.blit(line, (x, controls_y + 27 + index * 17))
 
         if self.message and not self.message.startswith("Model error"):
             message = self._fit_text(self.small_font, self.message, width)
             self.screen.blit(self.small_font.render(message, True, self.MUTED), (x, 700))
 
+    def _draw_model_picker(self) -> None:
+        shade = pygame.Surface((self.WINDOW_WIDTH, self.WINDOW_HEIGHT), pygame.SRCALPHA)
+        shade.fill((0, 0, 0, 155))
+        self.screen.blit(shade, (0, 0))
+
+        dialog = self._picker_dialog_rect()
+        pygame.draw.rect(self.screen, self.PANEL, dialog, border_radius=14)
+        pygame.draw.rect(self.screen, self.GRID, dialog, width=2, border_radius=14)
+        title = self.title_font.render("Choose a new matchup", True, self.TEXT)
+        self.screen.blit(title, (dialog.x + 32, dialog.y + 25))
+
+        mouse_position = pygame.mouse.get_pos()
+        for color in (BLACK, WHITE):
+            dropdown = self._picker_dropdown_rect(color)
+            active = color == self.picker_color or color == self.picker_dropdown_color
+            self.screen.blit(
+                self.heading_font.render(
+                    f"{COLOR_NAMES[color]} model",
+                    True,
+                    self.TEXT,
+                ),
+                (dropdown.x, dropdown.y - 30),
+            )
+            pygame.draw.rect(
+                self.screen,
+                (255, 250, 232) if active else (248, 249, 250),
+                dropdown,
+                border_radius=7,
+            )
+            pygame.draw.rect(
+                self.screen,
+                self.GOLD if active else (205, 210, 216),
+                dropdown,
+                width=2 if active else 1,
+                border_radius=7,
+            )
+            option = self.model_options[self.picker_indices[color]]
+            option_label = self._fit_text(
+                self.body_font,
+                option.label,
+                dropdown.width - 64,
+            )
+            self.screen.blit(
+                self.body_font.render(option_label, True, self.TEXT),
+                (dropdown.x + 16, dropdown.y + 16),
+            )
+            arrow_x = dropdown.right - 26
+            arrow_y = dropdown.centery
+            pygame.draw.polygon(
+                self.screen,
+                self.MUTED,
+                (
+                    (arrow_x - 6, arrow_y - 3),
+                    (arrow_x + 6, arrow_y - 3),
+                    (arrow_x, arrow_y + 5),
+                ),
+            )
+
+        instructions = (
+            "Click a dropdown, then scroll and click a model.",
+            "Keyboard: Tab switches color, Space opens, arrows select.",
+        )
+        for index, line in enumerate(instructions):
+            self.screen.blit(
+                self.small_font.render(line, True, self.MUTED),
+                (dialog.x + 32, dialog.y + 350 + index * 22),
+            )
+
+        for is_start, label in ((False, "Cancel"), (True, "Start new game")):
+            button = self._picker_button_rect(is_start)
+            hovered = button.collidepoint(mouse_position)
+            if is_start:
+                fill = (35, 116, 69) if hovered else self.BOARD_GREEN
+                text_color = self.PANEL
+            else:
+                fill = (232, 234, 237) if hovered else (242, 243, 245)
+                text_color = self.TEXT
+            pygame.draw.rect(self.screen, fill, button, border_radius=7)
+            pygame.draw.rect(
+                self.screen,
+                self.GRID if is_start else (195, 200, 206),
+                button,
+                width=1,
+                border_radius=7,
+            )
+            text_surface = self.body_font.render(label, True, text_color)
+            self.screen.blit(
+                text_surface,
+                (
+                    button.centerx - text_surface.get_width() // 2,
+                    button.centery - text_surface.get_height() // 2,
+                ),
+            )
+
+        if self.picker_message:
+            message = self._fit_text(
+                self.small_font,
+                self.picker_message,
+                dialog.width - 64,
+            )
+            message_color = (
+                self.RED
+                if self.picker_message.startswith("Could not")
+                else self.TEXT
+            )
+            self.screen.blit(
+                self.small_font.render(message, True, message_color),
+                (dialog.x + 32, dialog.bottom - 112),
+            )
+
+        if self.picker_dropdown_color is not None:
+            list_rect = self._picker_list_rect(self.picker_dropdown_color)
+            pygame.draw.rect(self.screen, self.PANEL, list_rect, border_radius=5)
+            pygame.draw.rect(self.screen, self.GRID, list_rect, width=1, border_radius=5)
+            visible_count = min(self.PICKER_VISIBLE_OPTIONS, len(self.model_options))
+            selected_index = self.picker_indices[self.picker_dropdown_color]
+            for row in range(visible_count):
+                index = self.picker_scroll_offset + row
+                if index >= len(self.model_options):
+                    break
+                row_rect = pygame.Rect(
+                    list_rect.x + 1,
+                    list_rect.y + row * self.PICKER_ROW_HEIGHT + 1,
+                    list_rect.width - 2,
+                    self.PICKER_ROW_HEIGHT,
+                )
+                if index == selected_index:
+                    pygame.draw.rect(self.screen, (255, 245, 210), row_rect)
+                elif row_rect.collidepoint(mouse_position):
+                    pygame.draw.rect(self.screen, (239, 243, 246), row_rect)
+                option_label = self._fit_text(
+                    self.body_font,
+                    self.model_options[index].label,
+                    row_rect.width - 34,
+                )
+                self.screen.blit(
+                    self.body_font.render(option_label, True, self.TEXT),
+                    (row_rect.x + 12, row_rect.y + 9),
+                )
+
+            if len(self.model_options) > visible_count:
+                track = pygame.Rect(
+                    list_rect.right - 9,
+                    list_rect.y + 4,
+                    5,
+                    list_rect.height - 8,
+                )
+                pygame.draw.rect(self.screen, (226, 229, 232), track, border_radius=3)
+                thumb_height = max(
+                    20,
+                    int(track.height * visible_count / len(self.model_options)),
+                )
+                max_offset = len(self.model_options) - visible_count
+                thumb_y = track.y + int(
+                    (track.height - thumb_height)
+                    * self.picker_scroll_offset
+                    / max_offset
+                )
+                pygame.draw.rect(
+                    self.screen,
+                    self.MUTED,
+                    pygame.Rect(track.x, thumb_y, track.width, thumb_height),
+                    border_radius=3,
+                )
+
     def draw(self) -> None:
         self.screen.fill(self.BACKGROUND)
         self._draw_board()
         self._draw_panel()
+        if self.picker_open:
+            self._draw_model_picker()
         pygame.display.flip()
 
     def run(self) -> None:
@@ -585,6 +1095,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             delay=_clamp_delay(args.delay),
             seed=args.seed,
             start_paused=args.step,
+            model_options=options,
+            black_spec=black_spec,
+            white_spec=white_spec,
         )
         app.run()
     except (OSError, RuntimeError, ValueError) as exc:
