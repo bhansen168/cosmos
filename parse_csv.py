@@ -2,7 +2,7 @@ import os,sys
 import pandas as pd
 
 
-def parse_csv(self,file:str):
+def parse_csv(file:str):
         
     df= pd.read_csv(file)
 
