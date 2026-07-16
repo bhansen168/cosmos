@@ -44,6 +44,7 @@ class Main:
         self.side = side
 
         self.showLegal = False
+        self.printed = False
         self.clickDict = {}
 
         self.reset()
@@ -55,7 +56,9 @@ class Main:
         self.activePlayerIndex = 0
         if self.mode == "computer":
             self.computer = Computer(self.game,Game.WHITE)
-            print(f"Playing \"{Computer.PATH}\"")
+            if not self.printed:
+                print(f"Playing \"{Computer.PATH}\"")
+                self.printed = True
         self.close_timeout = None
         
 
