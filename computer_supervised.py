@@ -13,6 +13,7 @@ from xgboost import XGBClassifier
 
 sys.path.append(os.getcwd())
 from readWTB import parse_wtb
+from parse_csv import parse_csv
 from computerRL import OthelloEnv
 
 def predict_finish(start,amtCompleted):
@@ -89,13 +90,17 @@ def legal_moves_to_np_arr(legal,actionDim):
     return arr
 
 class CompSupervised:
-    WTHOR = os.getcwd()+"/data"
+    DATA = os.getcwd()+"/data"
     
     def __init__(self):
-        self.files = [file for file in os.listdir(CompSupervised.WTHOR) if file.endswith(".wtb")]
+        self.files = [file for file in os.listdir(CompSupervised.DATA) if (file.endswith(".wtb") or file.endswith(".csv"))]
         games = []
         for file in self.files:
-            new = parse_wtb(CompSupervised.WTHOR+"/"+file)
+            path = CompSupervised.DATA+"/"+file
+            if file.endswith(".wtb"):
+                new = parse_wtb(path)
+            else:
+                new = parse_csv(path)
             games.extend(new)
 
         print(f"Games: {len(games)}")
