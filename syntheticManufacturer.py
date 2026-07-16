@@ -44,7 +44,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 MODELS_DIRECTORY = PROJECT_ROOT / "models"
 GENETIC_MODELS_DIRECTORY = MODELS_DIRECTORY / "genetic"
 DEFAULT_BARD_CHECKPOINT = MODELS_DIRECTORY / "supervised" / "wthor-kaggle.bard"
-BENCHMARK_MINIMAX_DEPTHS = (1, 2, 3, 4)
+BENCHMARK_MINIMAX_DEPTHS = (1, 2, 3, 4, 5, 6)
 
 
 class DQNPlayer:
