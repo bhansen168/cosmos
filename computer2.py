@@ -25,10 +25,14 @@ class Computer2(Computer): #incorporates AI model -- use PTH extension
         return self.agent.get_value_prediction(state, legal_moves)
 
 class Computer3(Computer):
-    PATH = os.getcwd()+"/models/demoPlus.bard"
-    def __init__(self,game,color):
+    PATH = os.getcwd()+"/models/supervised/wthor-kaggle.bard"
+    #dataset sourced from Kaggle (CSV) and WTHOR (French Othello Federation)
+    def __init__(self,game,color,path=None):
         super().__init__(game,color)
-        self.agent = load_agent_sup(Computer3.PATH)
+
+        if path is None:
+            path = Computer3.PATH
+        self.agent = load_agent_sup(path)
 
     def pick(self):
         legal = self.game.get_all_legal_moves(self.color)

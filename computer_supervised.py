@@ -271,4 +271,4 @@ def load_agent(file):
 
 if __name__ == "__main__":
     cs = CompSupervised()
-    cs.train(savePath=os.getcwd()+"/models/demo++.bard")
+    cs.train(savePath=os.getcwd()+f"/models/supervised/wthor-kaggle-{str(datetime.now()).split('.')[0].replace('-','').replace(' ','').replace(':','')}.bard")
