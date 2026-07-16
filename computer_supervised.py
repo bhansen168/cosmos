@@ -116,7 +116,8 @@ class CompSupervised:
         env = OthelloEnv()
         self.games = []
         
-        for game in games:
+        for i in range(len(games)):
+            game = games[i]
             gameFormatted = []
             board, _ = env.reset() # Assuming env.reset() returns (initial_board, info)
             
@@ -145,6 +146,15 @@ class CompSupervised:
                     board, _, _, _, _ = env.step(action)
                 
             self.games.append(gameFormatted)
+
+            if i%200 == 199 or i+1==len(games):
+                print("Formatted {i+1} / {len(games)} ({round((i+1)/len(games) * 100,2)}%) -- finish formatting at "+predict_finish(start,(i+1)/len(games)))
+                
+                
+
+            
+
+            
         #print("Formatted data!")
     def train(self, savePath="model.bard"): 
         print("Training...")
@@ -183,7 +193,7 @@ class CompSupervised:
         )
 
         # 5. TRAIN AND SAVE
-        model.fit(X_train, y_train)
+        model.fit(X_train, y_train,verbose=True)
 
         with open(savePath, "wb") as file1:
             pickle.dump(model, file1)
