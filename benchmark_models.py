@@ -5,7 +5,7 @@ Run without arguments for an interactive model picker, or pass model specs:
 
     python benchmark_models.py --player-1 random --player-2 greedy --games 500
     python benchmark_models.py --player-1 minimax:3 --player-2 greedy --games 100
-    python benchmark_models.py --player-1 genetic:models/genetic/genetic_gen_0024.json \
+    python benchmark_models.py --player-1 genetic:models/genetic/genetic_gen_0009.json \
         --player-2 minimax --games 100
     python benchmark_models.py --player-1 greedy \
         --player-2 models/v1/othello_100k.pth --games 100
@@ -24,12 +24,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
+from computer import Computer as GreedyPlayer
+from computer import RandomComputer as RandomPlayer
 from genetic_model import GeneticPlayer
 from minimax_model import DEFAULT_MINIMAX_DEPTH, MinimaxPlayer
 from othello_engine import (
     BLACK,
-    BOARD_SIZE,
-    EMPTY,
     WHITE,
     HeadlessOthello,
     LegalMove,
@@ -45,104 +45,29 @@ GENETIC_MODELS_DIRECTORY = MODELS_DIRECTORY / "genetic"
 BENCHMARK_MINIMAX_DEPTHS = (1, 2, 3, 4)
 
 
-class RandomPlayer:
-    name = "Random"
-
-    def choose_move(
-        self,
-        game: HeadlessOthello,
-        color: int,
-        legal_moves: Sequence[LegalMove],
-        rng: random.Random,
-    ) -> tuple[int, int]:
-        del game, color
-        move = rng.choice(legal_moves)
-        return move.x, move.y
-
-
-class GreedyPlayer:
-    name = "Greedy"
-
-    def choose_move(
-        self,
-        game: HeadlessOthello,
-        color: int,
-        legal_moves: Sequence[LegalMove],
-        rng: random.Random,
-    ) -> tuple[int, int]:
-        del game, color, rng
-        # max() keeps the first row-major move on a tie, matching computer.py.
-        move = max(legal_moves, key=lambda candidate: len(candidate.flips))
-        return move.x, move.y
-
-
 class DQNPlayer:
-    """Adapter for COSMOS DQN state-dictionary checkpoints."""
+    """Benchmark adapter using the original computerRL.py DQN implementation."""
 
     def __init__(self, checkpoint: Path) -> None:
         try:
-            import torch
-            from torch import nn
-            import torch.nn.functional as functional
+            from computerRL import (
+                encode_state,
+                index_to_coord,
+                legal_moves_to_np_arr,
+                load_agent,
+            )
         except ImportError as exc:
             raise RuntimeError(
                 "DQN checkpoints require PyTorch. Run the benchmark with the "
                 "same Python environment used to run or train COSMOS."
             ) from exc
 
-        self._torch = torch
         self.checkpoint = checkpoint.resolve()
-
-        try:
-            state_dict = torch.load(
-                self.checkpoint,
-                map_location="cpu",
-                weights_only=True,
-            )
-        except TypeError:
-            # Compatibility with older PyTorch releases without weights_only.
-            state_dict = torch.load(self.checkpoint, map_location="cpu")
-
-        try:
-            layer1_weight = state_dict["layer1.weight"]
-            layer4_weight = state_dict["layer4.weight"]
-            input_size = int(layer1_weight.shape[1])
-            hidden_size = int(layer1_weight.shape[0])
-            output_size = int(layer4_weight.shape[0])
-        except (KeyError, TypeError, IndexError, AttributeError) as exc:
-            raise ValueError(
-                f"DQN checkpoint has an unrecognized network layout: {self.checkpoint}"
-            ) from exc
-
-        if input_size != BOARD_SIZE * BOARD_SIZE or output_size != BOARD_SIZE * BOARD_SIZE:
-            raise ValueError(
-                "DQN checkpoint must have 64 board inputs and 64 move outputs: "
-                f"{self.checkpoint}"
-            )
-
-        class QNet(nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.layer1 = nn.Linear(64, hidden_size)
-                self.layer2 = nn.Linear(hidden_size, hidden_size)
-                self.layer3 = nn.Linear(hidden_size, hidden_size)
-                self.layer4 = nn.Linear(hidden_size, 64)
-
-            def forward(self, state):
-                state = functional.relu(self.layer1(state))
-                state = functional.relu(self.layer2(state))
-                state = functional.relu(self.layer3(state))
-                return self.layer4(state)
-
-        self.network = QNet()
-        try:
-            self.network.load_state_dict(state_dict)
-        except RuntimeError as exc:
-            raise ValueError(
-                f"DQN checkpoint does not match a supported COSMOS network: "
-                f"{self.checkpoint}"
-            ) from exc
-        self.network.eval()
+        self.agent = load_agent(self.checkpoint)
+        self._encode_state = encode_state
+        self._index_to_coord = index_to_coord
+        self._legal_moves_to_np_arr = legal_moves_to_np_arr
+        hidden_size = self.agent.policyNet.layer1.out_features
 
         try:
             relative_name = self.checkpoint.relative_to(PROJECT_ROOT)
@@ -150,29 +75,14 @@ class DQNPlayer:
             relative_name = self.checkpoint
         self.name = f"DQN ({relative_name}, {hidden_size} hidden units)"
 
-    @staticmethod
-    def _encode_board(game: HeadlessOthello, color: int) -> list[int]:
-        other = opponent(color)
-        values = {EMPTY: 0, color: 1, other: -1}
-        return [values[square] for row in game.board for square in row]
-
-    def _get_q_values(self, game: HeadlessOthello, color: int):
-        """Return raw Q-values tensor for the current position."""
-        state = self._torch.tensor(self._encode_board(game, color), dtype=self._torch.float32)
-        with self._torch.inference_mode():
-            return self.network(state)
-
     def get_value_prediction(self, game: HeadlessOthello, color: int) -> float:
-        """Return the estimated value (max Q over legal moves) for the current position."""
-        q_values = self._get_q_values(game, color)
-        legal_moves = game.legal_moves(color)
-        if not legal_moves:
+        legal = game.get_all_legal_moves(color)
+        if not legal:
             return 0.0
-        max_q = max(
-            q_values[move.y * BOARD_SIZE + move.x].item()
-            for move in legal_moves
+        return self.agent.get_value_prediction(
+            self._encode_state(game.board,color),
+            self._legal_moves_to_np_arr(legal,self.agent.actionDim),
         )
-        return max_q
 
     def choose_move(
         self,
@@ -182,21 +92,14 @@ class DQNPlayer:
         rng: random.Random,
     ) -> tuple[int, int]:
         del rng
-        state = self._torch.tensor(
-            self._encode_board(game, color),
-            dtype=self._torch.float32,
+        legal = [(move.x,move.y) for move in legal_moves]
+        action = self.agent.select_action(
+            self._encode_state(game.board,color),
+            self._legal_moves_to_np_arr(legal,self.agent.actionDim),
+            0.0,
         )
-        with self._torch.inference_mode():
-            q_values = self.network(state)
-
-        # Restrict the argmax to legal board positions.
-        move = max(
-            legal_moves,
-            key=lambda candidate: q_values[
-                candidate.y * BOARD_SIZE + candidate.x
-            ].item(),
-        )
-        return move.x, move.y
+        y,x = self._index_to_coord(action)
+        return x,y
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 import sys
 import tempfile
@@ -26,13 +27,26 @@ from benchmark_models import (  # noqa: E402
     opponent,
     run_match,
 )
-from genetic_model import GeneticPlayer, TrainingConfig, load_checkpoint, train  # noqa: E402
+from computer import Computer, RandomComputer, create_minimax_computer  # noqa: E402
+from genetic_model import (  # noqa: E402
+    CHECKPOINT_FORMAT,
+    CHECKPOINT_VERSION,
+    GENOME_SIZE,
+    LEGACY_GENOME_SIZE,
+    GeneticPlayer,
+    TrainingConfig,
+    load_checkpoint,
+    train,
+)
 from game import Game  # noqa: E402
 from minimax_model import MinimaxPlayer as StandaloneMinimaxPlayer  # noqa: E402
 from watch_models import SpectatorMatch  # noqa: E402
 
 
 class HeadlessRulesTests(unittest.TestCase):
+    def test_new_engine_name_uses_the_original_game_class(self) -> None:
+        self.assertIs(HeadlessOthello, Game)
+
     def test_rules_match_existing_game_across_complete_games(self) -> None:
         for seed in range(10):
             with self.subTest(seed=seed):
@@ -67,6 +81,38 @@ class HeadlessRulesTests(unittest.TestCase):
         game = HeadlessOthello()
         self.assertEqual(len(game.legal_moves(BLACK)), 4)
         self.assertEqual(len(game.legal_moves(WHITE)), 4)
+
+    def test_original_computers_supply_benchmark_player_interfaces(self) -> None:
+        self.assertIs(GreedyPlayer, Computer)
+        self.assertIs(RandomPlayer, RandomComputer)
+        game = Game()
+        greedy_move = GreedyPlayer().choose_move(
+            game,
+            BLACK,
+            game.legal_moves(BLACK),
+            random.Random(1),
+        )
+        random_move = RandomPlayer().choose_move(
+            game,
+            BLACK,
+            game.legal_moves(BLACK),
+            random.Random(1),
+        )
+        legal = set(game.get_all_legal_moves(BLACK))
+        self.assertIn(greedy_move, legal)
+        self.assertIn(random_move, legal)
+
+    def test_bound_computer_places_the_requested_color(self) -> None:
+        game = Game()
+        computer = Computer(game, WHITE)
+        computer.pick_greedy(color=BLACK, place=True)
+        self.assertEqual(game.get_score(), {BLACK: 4, WHITE: 1})
+
+        minimax = create_minimax_computer(game, WHITE, depth=1)
+        original_board = [row.copy() for row in game.board]
+        selected = minimax.pick_minimax(color=WHITE, place=False)
+        self.assertIn(selected, game.get_all_legal_moves(WHITE))
+        self.assertEqual(game.board, original_board)
 
 
 class MatchTests(unittest.TestCase):
@@ -125,10 +171,16 @@ class MatchTests(unittest.TestCase):
                     generations=1,
                     population_size=4,
                     games_per_pair=1,
-                    baseline_games=1,
+                    coevolution_opponents=1,
+                    baseline_games=0,
                     minimax_games=0,
+                    search_depth=1,
+                    opening_plies=2,
+                    validation_candidates=1,
+                    validation_openings=1,
                     elite_count=1,
                     tournament_size=2,
+                    random_immigrants=1,
                     checkpoint_every=1,
                     output_directory=Path(temporary_directory),
                     seed=9,
@@ -136,11 +188,15 @@ class MatchTests(unittest.TestCase):
             )
 
             payload = load_checkpoint(checkpoint)
+            self.assertEqual(payload["version"], CHECKPOINT_VERSION)
             self.assertEqual(payload["generation"], 0)
             self.assertEqual(len(payload["population"]), 4)
+            self.assertIn("champion", payload)
+            self.assertEqual(len(payload["champion"]["genome"]), GENOME_SIZE)
 
             player = build_player(f"genetic:{checkpoint}")
             self.assertIsInstance(player, GeneticPlayer)
+            self.assertEqual(player.genome, tuple(payload["champion"]["genome"]))
             game = HeadlessOthello()
             original_board = [row.copy() for row in game.board]
             legal_moves = game.legal_moves(BLACK)
@@ -167,10 +223,16 @@ class MatchTests(unittest.TestCase):
                     generations=2,
                     population_size=4,
                     games_per_pair=1,
-                    baseline_games=1,
+                    coevolution_opponents=1,
+                    baseline_games=0,
                     minimax_games=0,
+                    search_depth=1,
+                    opening_plies=2,
+                    validation_candidates=1,
+                    validation_openings=1,
                     elite_count=1,
                     tournament_size=2,
+                    random_immigrants=1,
                     checkpoint_every=1,
                     output_directory=Path(temporary_directory),
                     seed=9,
@@ -178,6 +240,48 @@ class MatchTests(unittest.TestCase):
                 )
             )
             self.assertEqual(load_checkpoint(resumed_checkpoint)["generation"], 1)
+
+    def test_legacy_genetic_checkpoint_upgrades_and_uses_current_winner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "legacy.json"
+            stale_best = [0.75 for _ in range(LEGACY_GENOME_SIZE)]
+            current_best = [0.25 for _ in range(LEGACY_GENOME_SIZE)]
+            payload = {
+                "format": CHECKPOINT_FORMAT,
+                "version": 1,
+                "generation": 34,
+                "generation_best": {
+                    "genome": current_best,
+                    "fitness": 0.7,
+                    "games": 44,
+                },
+                "best_ever": {
+                    "genome": stale_best,
+                    "fitness": 0.95,
+                    "games": 44,
+                },
+                "population": [
+                    {"genome": current_best, "fitness": 0.7, "games": 44},
+                    {"genome": stale_best, "fitness": 0.6, "games": 44},
+                ],
+                "config": {"minimax_depth": 1},
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            upgraded = load_checkpoint(path)
+            player = GeneticPlayer.from_checkpoint(path)
+
+            self.assertEqual(upgraded["source_version"], 1)
+            self.assertEqual(upgraded["version"], CHECKPOINT_VERSION)
+            self.assertEqual(len(upgraded["champion"]["genome"]), GENOME_SIZE)
+            self.assertEqual(
+                player.genome,
+                tuple(upgraded["champion"]["genome"]),
+            )
+            self.assertNotEqual(
+                upgraded["champion"]["genome"],
+                upgraded["best_ever"]["genome"],
+            )
 
 
 class SpectatorTests(unittest.TestCase):
