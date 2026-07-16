@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os,warnings,sys
+import os,warnings,sys,pickle
 from dataclasses import dataclass
 
 warnings.filterwarnings("ignore")
@@ -35,8 +35,10 @@ class Game:
     TOP_LEFT = (20,20)
 
     DIRS = [(0,1),(1,1),(1,0),(1,-1),(0,-1),(-1,-1),(-1,0),(-1,1)]
+
+    SYNTHFILE = os.getcwd()+"/data/synthetic.tmpst" #for storing game history as synthetic data
     
-    def __init__(self,side=8): #side is number of squares per side
+    def __init__(self,side=8,save = False): #side is number of squares per side
         self.side = side
         self.board = [[0 for _ in range(side)] for _ in range(side)]
         #set middle squares
@@ -46,6 +48,8 @@ class Game:
         self._move_history = []
 
         self._set_middle()
+
+        self.save = save
 
     def _set_middle(self):
         self.board[3][3] = Game.WHITE
@@ -67,7 +71,13 @@ class Game:
         for y in range(self.side):
             for x in range(self.side):
                 found[self.board[y][x]] = True
-        return (False in list(found.values()) or self.no_legal_moves)
+        out =  (False in list(found.values()) or self.no_legal_moves)
+
+
+        if self.save and out:
+            self.save_game()
+
+        return out
 
     def draw_board(self,screen):
         global pygame
@@ -235,6 +245,27 @@ class Game:
 
     def score(self):
         return self.get_score()
+
+    def save_game(self,file=None):
+        #format
+        moves = [move[1] for move in self._move_history]
+        coords = [(move.x,move.y) for move in moves]
+
+        #write to file
+        if file is None:
+            file = Game.SYNTHFILE
+
+        games = []
+        if os.path.exists(file):
+            with open(file,"rb") as fileRef:
+                games = pickle.load(fileRef)
+                
+        games.append(coords)
+        with open(file,"wb") as fileRef2:
+            pickle.dump(games,fileRef2)
+        
+                
+        
 
     def clone(self):
         """Return an independent copy for model search or spectator threads."""

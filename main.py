@@ -21,6 +21,8 @@ from computer2 import Computer4 as GeneticComputer
 from computer2 import Computer5 as GeneticComputer25
 from computer import create_minimax_computer
 #from computer2 import Computer3 as Computer #supervised bot; really bad
+#from computer import ComputerDQN as Computer
+from computer import ComputerSupervised as Computer #supervised bot; really bad
 
 class Main:
     GREEN = (34,139,34)
@@ -65,7 +67,7 @@ class Main:
         
 
     def reset(self):
-        self.game = Game(self.side)
+        self.game = Game(self.side)#never make save=True because then saves empty list
         self.activePlayerIndex = 0
         if self.mode in Main.AI_MODES:
             ai_name, ai_class = Main.AI_MODES[self.mode]
