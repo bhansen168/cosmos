@@ -14,15 +14,8 @@ from datetime import datetime,timedelta
 
 sys.path.append(os.getcwd())
 from game import Game
-#from computer import Computer
-from computer2 import Computer2 as Computer
-from computer2 import Computer3 as SupervisedComputer
-from computer2 import Computer4 as GeneticComputer
-from computer2 import Computer5 as GeneticComputer25
-from computer import create_minimax_computer
-#from computer2 import Computer3 as Computer #supervised bot; really bad
-#from computer import ComputerDQN as Computer
-from computer import ComputerSupervised as Computer #supervised bot; really bad
+from computer import ComputerDQN,ComputerSupervised as SupervisedComputer,ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer
+
 
 class Main:
     GREEN = (34,139,34)
@@ -35,12 +28,15 @@ class Main:
     LIME = (50,205,50)
     
     AI_MODES = {
-        "dqn": ("DQN", Computer),
+        "dqn": ("DQN", ComputerDQN),
         "genetic": ("Genetic", GeneticComputer),
         "genetic_25": ("Genetic 25th Gen", GeneticComputer25),
         "supervised": ("Supervised", SupervisedComputer),
-        "minimax": ("Minimax", lambda g, c: create_minimax_computer(g, c, depth=2)),
+        "minimax-2": ("Minimax", lambda g, c: create_minimax_computer(g, c, depth=2)),
+        "minimax-4": ("Minimax", lambda g, c: create_minimax_computer(g, c, depth=4)),
     }
+
+    TESTING_ML = False
     
     def __init__(self,side=8,mode = "dqn"):
         #mode is computer: pvcom
@@ -146,6 +142,18 @@ class Main:
     def computer_active(self):
         return (self.computer is not None and self.activePlayerIndex+1 == self.computer.color)
 
+    def draw_ai_val(self):
+        if self.computer_active() and hasattr(self.computer, 'get_value_prediction') and Main.TESTING_ML:
+            try:
+                value = self.computer.get_value_prediction()
+                val_text = f"{value:+.3f}"
+                val_color = Main.LIGHT_GREEN if value > 0 else (Main.LIGHT_RED if value < 0 else Main.BLACK)
+                surf = self.font.render(val_text, True, val_color)
+                screen.blit(surf, (self.width-180, 180))
+            except Exception as e:
+                # Print error to console for debugging
+                print(f"Value display error: {e}")
+
     def draw(self,screen):
         self.clickDict = {}
         self.game.draw_board(screen)
@@ -166,16 +174,7 @@ class Main:
             self.draw_legal(screen)
 
         # Show AI value prediction when computer is thinking or it's computer's turn
-        if self.computer_active() and hasattr(self.computer, 'get_value_prediction'):
-            try:
-                value = self.computer.get_value_prediction()
-                val_text = f"{value:+.3f}"
-                val_color = Main.LIGHT_GREEN if value > 0 else (Main.LIGHT_RED if value < 0 else Main.BLACK)
-                surf = self.font.render(val_text, True, val_color)
-                screen.blit(surf, (self.width-180, 180))
-            except Exception as e:
-                # Print error to console for debugging
-                print(f"Value display error: {e}")
+        self.draw_ai_val()
 
     def next_turn(self):
         self.activePlayerIndex = (self.activePlayerIndex+1)%2
