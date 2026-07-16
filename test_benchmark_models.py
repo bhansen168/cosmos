@@ -331,7 +331,12 @@ class SpectatorTests(unittest.TestCase):
             match.apply_move((selected.x, selected.y))
 
         scores = match.scores()
+        final_board = [row.copy() for row in match.game.board]
+        final_turn = len(match.history)
         self.assertGreater(len(match.history), 0)
+        self.assertTrue(match.at_latest)
+        self.assertEqual(match.timeline_index, final_turn)
+        self.assertEqual(len(match.timeline), final_turn + 1)
         self.assertGreater(scores[BLACK] + scores[WHITE], 4)
         self.assertFalse(match.game.legal_moves(BLACK))
         self.assertFalse(match.game.legal_moves(WHITE))
@@ -340,6 +345,44 @@ class SpectatorTests(unittest.TestCase):
         else:
             expected = BLACK if scores[BLACK] > scores[WHITE] else WHITE
             self.assertEqual(match.winner, expected)
+
+        self.assertTrue(match.seek(0))
+        self.assertFalse(match.game_over)
+        self.assertEqual(match.game.board, Game().board)
+        self.assertEqual(match.visible_history, [])
+
+        self.assertTrue(match.seek_relative(1))
+        self.assertEqual(len(match.visible_history), 1)
+        self.assertEqual(match.last_move, match.history[0].coordinate)
+
+        self.assertTrue(match.seek(final_turn))
+        self.assertTrue(match.at_latest)
+        self.assertTrue(match.game_over)
+        self.assertEqual(match.game.board, final_board)
+        self.assertEqual(match.scores(), scores)
+
+    def test_spectator_can_branch_after_rewinding(self) -> None:
+        match = SpectatorMatch()
+        first = match.legal_moves()[0]
+        match.apply_move((first.x, first.y))
+        original_second = match.legal_moves()[0]
+        match.apply_move((original_second.x, original_second.y))
+
+        self.assertEqual(len(match.history), 2)
+        self.assertTrue(match.seek(1))
+        alternatives = [
+            move
+            for move in match.legal_moves()
+            if (move.x, move.y) != (original_second.x, original_second.y)
+        ]
+        self.assertTrue(alternatives)
+        replacement = alternatives[-1]
+        match.apply_move((replacement.x, replacement.y))
+
+        self.assertTrue(match.at_latest)
+        self.assertEqual(len(match.history), 2)
+        self.assertEqual(len(match.timeline), 3)
+        self.assertEqual(match.history[-1].coordinate, (replacement.x, replacement.y))
 
 
 if __name__ == "__main__":
