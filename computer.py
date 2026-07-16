@@ -101,6 +101,17 @@ class ModelComputer(Computer):
     def pick(self):
         return self.pick_model()
 
+    def get_value_prediction(self):
+        """Return the model's estimated value for the current position."""
+        if hasattr(self.player, 'evaluate'):
+            # Genetic player uses evaluate(game, color)
+            return self.player.evaluate(self.game, self.color)
+        elif hasattr(self.player, 'get_value_prediction'):
+            # DQN agent has get_value_prediction(state, legal_moves)
+            # This is for the agent case, not used via ModelComputer
+            pass
+        return 0.0
+
 
 def create_minimax_computer(game,color,depth=2):
     from minimax_model import MinimaxPlayer

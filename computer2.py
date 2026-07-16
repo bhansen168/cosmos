@@ -6,10 +6,12 @@ from computer_supervised import (
     encode_state as encode_state_sup,
     load_agent as load_agent_sup,
 )
+from computer import create_genetic_computer
 
 
 class Computer2(Computer): #incorporates AI model -- use PTH extension
     PATH = os.getcwd()+"/models/checkpoints/othello_v02_1.0k-sav.pth"
+    name = "DQN"
     def __init__(self,game,color):
         super().__init__(game,color)
         from computerRL import load_agent
@@ -66,4 +68,42 @@ class Computer3(Computer):
             return
         x,y = self.choose_move(self.game,self.color,legal,None)
         self.game.place_piece(self.color,x,y)
+
+
+class Computer4(Computer): # Genetic algorithm model - latest
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","genetic","latest.json")
+    def __init__(self,game=None,color=None,path=None):
+        super().__init__(game,color)
+
+        if path is None:
+            path = Computer4.PATH
+        self.path = os.path.abspath(path)
+        self.computer = create_genetic_computer(game, color, self.path)
+        self.name = f"Genetic ({os.path.basename(self.path)})"
+
+    def pick(self):
+        self.computer.pick()
+
+    def get_value_prediction(self):
+        """Return the genetic model's estimated value for the current position."""
+        return self.computer.get_value_prediction()
+
+
+class Computer5(Computer): # Genetic algorithm model - 25th generation
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","genetic","genetic_gen_0024.json")
+    def __init__(self,game=None,color=None,path=None):
+        super().__init__(game,color)
+
+        if path is None:
+            path = Computer5.PATH
+        self.path = os.path.abspath(path)
+        self.computer = create_genetic_computer(game, color, self.path)
+        self.name = f"Genetic 25th Gen ({os.path.basename(self.path)})"
+
+    def pick(self):
+        self.computer.pick()
+
+    def get_value_prediction(self):
+        """Return the genetic model's estimated value for the current position."""
+        return self.computer.get_value_prediction()
 

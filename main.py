@@ -16,6 +16,10 @@ sys.path.append(os.getcwd())
 from game import Game
 #from computer import Computer
 from computer2 import Computer2 as Computer
+from computer2 import Computer3 as SupervisedComputer
+from computer2 import Computer4 as GeneticComputer
+from computer2 import Computer5 as GeneticComputer25
+from computer import create_minimax_computer
 #from computer2 import Computer3 as Computer #supervised bot; really bad
 
 class Main:
@@ -28,19 +32,28 @@ class Main:
     LIGHT_RED = (255,151,151)
     LIME = (50,205,50)
     
-    def __init__(self,side=8,mode = "computer"):
+    AI_MODES = {
+        "dqn": ("DQN", Computer),
+        "genetic": ("Genetic", GeneticComputer),
+        "genetic_25": ("Genetic 25th Gen", GeneticComputer25),
+        "supervised": ("Supervised", SupervisedComputer),
+        "minimax": ("Minimax", lambda g, c: create_minimax_computer(g, c, depth=2)),
+    }
+    
+    def __init__(self,side=8,mode = "dqn"):
         #mode is computer: pvcom
         #mode is player: pvp
         self.running = True
 
         self.width = 800
         self.height = 600
- 
+  
         self.font = pygame.font.SysFont("Comic Sans",20)
         self.bigFont = pygame.font.SysFont("Comic Sans",40)
 
         self.mode = mode
         self.computer = None
+        self.computer_name = ""
         self.side = side
 
         self.showLegal = False
@@ -54,11 +67,14 @@ class Main:
     def reset(self):
         self.game = Game(self.side)
         self.activePlayerIndex = 0
-        if self.mode == "computer":
-            self.computer = Computer(self.game,Game.WHITE)
-            if not self.printed:
-                print(f"Playing \"{Computer.PATH}\"")
-                self.printed = True
+        if self.mode in Main.AI_MODES:
+            ai_name, ai_class = Main.AI_MODES[self.mode]
+            self.computer = ai_class(self.game, Game.WHITE)
+            self.computer_name = ai_name
+            print(f"Switched to {self.mode}: {self.computer.name if hasattr(self.computer, 'name') else self.computer.__class__.__name__}")
+        else:
+            self.computer = None
+            print(f"Switched to {self.mode} mode (human vs human)")
         self.close_timeout = None
         
 
@@ -67,6 +83,15 @@ class Main:
         text = self.font.render(("Black's" if self.activePlayerIndex+1 == Game.BLACK else "White's")+" Turn",True,Main.BLACK)
 
         screen.blit(text,(self.width-150,25))
+
+    @staticmethod
+    def _fit_text(font, text, width):
+        if font.size(text)[0] <= width:
+            return text
+        shortened = text
+        while shortened and font.size(shortened + "…")[0] > width:
+            shortened = shortened[:-1]
+        return shortened + "…"
 
     def draw_score(self,screen,x,y): #top left
         score = self.game.get_score()
@@ -117,7 +142,7 @@ class Main:
 
 
     def computer_active(self):
-        return (self.mode == "computer" and self.activePlayerIndex+1 == self.computer.color)
+        return (self.computer is not None and self.activePlayerIndex+1 == self.computer.color)
 
     def draw(self,screen):
         self.clickDict = {}
@@ -138,11 +163,11 @@ class Main:
         if self.showLegal:
             self.draw_legal(screen)
 
-        # Show DQN value prediction when computer is thinking or it's computer's turn
+        # Show AI value prediction when computer is thinking or it's computer's turn
         if self.computer_active() and hasattr(self.computer, 'get_value_prediction'):
             try:
                 value = self.computer.get_value_prediction()
-                val_text = f"DQN Value: {value:+.3f}"
+                val_text = f"{value:+.3f}"
                 val_color = Main.LIGHT_GREEN if value > 0 else (Main.LIGHT_RED if value < 0 else Main.BLACK)
                 surf = self.font.render(val_text, True, val_color)
                 screen.blit(surf, (self.width-180, 180))
@@ -175,19 +200,26 @@ class Main:
         pygame.display.set_caption("COSMOS - Othello")
 
         while self.running:
+            mode_switched = False
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
                 elif event.type == pygame.KEYDOWN:
-                    pass
-        
-                
+                    if event.key == pygame.K_F1:
+                        # Cycle through AI modes
+                        modes = list(Main.AI_MODES.keys()) + ["player"]
+                        idx = modes.index(self.mode) if self.mode in modes else 0
+                        self.mode = modes[(idx + 1) % len(modes)]
+                        self.reset()
+                        mode_switched = True
+                        break
+                    # Allow other keydowns to pass through (though we don't handle them)
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if self.close_timeout is None:
                         mx,my = pygame.mouse.get_pos()
                         sq = self.game.get_square_clicked(mx,my)
                         if sq is not None:
-                            if self.activePlayerIndex+1 == Game.BLACK or self.mode!="computer":
+                            if self.activePlayerIndex+1 == Game.BLACK or self.computer is None:
                                 x,y = sq
                                 successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
                                 if successful:
@@ -200,6 +232,9 @@ class Main:
                                     if key == "toggle":
                                         self.showLegal = not self.showLegal
                                     break
+            
+            if mode_switched:
+                continue
 
                     
 
@@ -222,8 +257,7 @@ class Main:
 
         
 if __name__ == "__main__":
-    GAME_MODE = "computer"
-    #GAME_MODE = "player"
+    GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player
     
     m = Main(mode=GAME_MODE)
     m.main()
