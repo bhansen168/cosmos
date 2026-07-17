@@ -49,7 +49,10 @@ class Main:
         self.height = 600
   
         self.font = pygame.font.SysFont("Comic Sans",20)
-        self.bigFont = pygame.font.SysFont("Comic Sans",40)
+        self.subtitle = pygame.font.Font("williamshakespearewf.ttf",45)
+        #self.subtitle = pygame.font.Font("hamlettertia-18.ttf",25)
+        #self.subtitle = pygame.font.Font("Shakespeare-First-Folio.ttf",15)
+        self.bigFont = pygame.font.Font("Shakespeare-First-Folio.ttf",40)#pygame.font.SysFont("Comic Sans",40)
 
         self.mode = mode
         self.computer = None
@@ -191,22 +194,23 @@ class Main:
         rect.center = (self.width/2,self.height/8)
         screen.blit(text,rect)
 
-        subtitle = self.font.render("Automated Othello Bot",True,Main.WHITE)
+        subtitle = self.subtitle.render("Automated Othello Bot",True,Main.WHITE)
         rect = subtitle.get_rect()
-        rect.center = (self.width/2,self.height/8 + 40)
+        rect.center = (self.width/2,self.height/8 + 55)
         screen.blit(subtitle,rect)
         
 
-        text2 = self.font.render("Mode: "+str(self.computer_name),True,Main.WHITE)
+        text2 = self.subtitle.render("Mode: "+str(self.computer_name),True,Main.WHITE)
+        #text2 = self.subtitle.render(str(self.computer_name)+" Model",True,Main.WHITE)
         rect = text2.get_rect()
-        rect.center = (self.width/2,self.height/4 + 30)
+        rect.center = (self.width/2,self.height/4 + 45)
         screen.blit(text2,rect)
 
 
         button = pygame.Rect(self.width/2 - 60, self.height/2 - 30,120,60)
         pygame.draw.rect(screen,Main.GRAY,button,border_radius = 5)
         self.clickDict["begin"] = button
-        buttonText = self.font.render("Begin Game",True,Main.BLACK)
+        buttonText = self.subtitle.render("Begin Game",True,Main.BLACK)
         rect = buttonText.get_rect()
         rect.center = button.center
         screen.blit(buttonText,rect)
@@ -261,7 +265,7 @@ class Main:
         icon_image = pygame.image.load('logo.png')  # Relative path to your 32x32 image
         pygame.display.set_icon(icon_image)
 
-        pygame.display.set_caption("COSMOS - Othello")
+        pygame.display.set_caption("Tempest Othello Environment")
 
         while self.running:
             mode_switched = False
