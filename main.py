@@ -2,7 +2,6 @@
 GUI for the game
 """
 
-#generic pygame template
 
 import os,warnings,sys
 warnings.filterwarnings("ignore")
@@ -26,14 +25,16 @@ class Main:
     LIGHT_GREEN = (162,255,184)
     LIGHT_RED = (255,151,151)
     LIME = (50,205,50)
+    GRAY = (210,210,210)
+    DARK_GREEN = (0,100,0)
     
     AI_MODES = {
         "dqn": ("DQN", ComputerDQN),
         "genetic": ("Genetic", GeneticComputer),
-        "genetic_25": ("Genetic 25th Gen", GeneticComputer25),
+        "genetic_25": ("Genetic-25", GeneticComputer25),
         "supervised": ("Supervised", SupervisedComputer),
-        "minimax-2": ("Minimax", lambda g, c: create_minimax_computer(g, c, depth=2)),
-        "minimax-4": ("Minimax", lambda g, c: create_minimax_computer(g, c, depth=4)),
+        "minimax-2": ("Minimax-2", lambda g, c: create_minimax_computer(g, c, depth=2)),
+        "minimax-4": ("Minimax-4", lambda g, c: create_minimax_computer(g, c, depth=4)),
     }
 
     TESTING_ML = True
@@ -47,11 +48,15 @@ class Main:
         self.height = 600
   
         self.font = pygame.font.SysFont("Comic Sans",20)
-        self.bigFont = pygame.font.SysFont("Comic Sans",40)
+        self.subtitle = pygame.font.Font("williamshakespearewf.ttf",45)
+        #self.subtitle = pygame.font.Font("hamlettertia-18.ttf",25)
+        #self.subtitle = pygame.font.Font("Shakespeare-First-Folio.ttf",15)
+        self.bigFont = pygame.font.Font("Shakespeare-First-Folio.ttf",40)#pygame.font.SysFont("Comic Sans",40)
 
         self.mode = mode
         self.computer = None
         self.computer_name = ""
+        self.compClass = None
         self.side = side
 
         self.compColor = (Game.WHITE if compColor == "W" else Game.BLACK)
@@ -60,13 +65,36 @@ class Main:
         self.printed = False
         self.clickDict = {}
 
+        #self.screen = "game" #set to "home"
+        self.screen = "home"
+
+        self.switch_comp() #init necessary stuff
         self.reset()
 
-        
 
+    def switch_comp(self):
+        if self.mode in Main.AI_MODES: #NOT PVP
+            ai_name, ai_class = Main.AI_MODES[self.mode]
+            self.compClass = ai_class
+            self.computer_name = ai_name
+
+        else:
+            self.compClass = None
+            self.computer_name = "PvP"
+
+    def begin_game(self):
+        if self.mode in Main.AI_MODES:
+            self.computer = self.compClass(self.game,self.compColor)
+        else:
+            self.computer = None
+        self.screen = "game"
+        
+            
     def reset(self):
         self.game = Game(self.side)#never make save=True because then saves empty list
         self.activePlayerIndex = 0
+
+        '''
         if self.mode in Main.AI_MODES:
             ai_name, ai_class = Main.AI_MODES[self.mode]
             self.computer = ai_class(self.game, self.compColor)
@@ -75,7 +103,10 @@ class Main:
         else:
             self.computer = None
             print(f"Switched to {self.mode} mode (human vs human)")
+        '''
         self.close_timeout = None
+        self.screen = "home"
+        self.computer = None
         
 
 
@@ -156,27 +187,60 @@ class Main:
                 # Print error to console for debugging
                 print(f"Value display error: {e}")
 
+    def draw_title(self,screen):
+        text = self.bigFont.render("Tempest",True,Main.WHITE)
+        rect = text.get_rect()
+        rect.center = (self.width/2,self.height/8)
+        screen.blit(text,rect)
+
+        subtitle = self.subtitle.render("Automated Othello Bot",True,Main.WHITE)
+        rect = subtitle.get_rect()
+        rect.center = (self.width/2,self.height/8 + 55)
+        screen.blit(subtitle,rect)
+        
+
+        text2 = self.subtitle.render(f"Mode{('l' if self.computer_name!='PvP' else '')}: "+str(self.computer_name),True,Main.WHITE)
+        #text2 = self.subtitle.render(str(self.computer_name)+" Model",True,Main.WHITE)
+        rect = text2.get_rect()
+        rect.center = (self.width/2,self.height/4 + 45)
+        screen.blit(text2,rect)
+
+
+        button = pygame.Rect(self.width/2 - 60, self.height/2 - 30,120,60)
+        pygame.draw.rect(screen,Main.GRAY,button,border_radius = 5)
+        self.clickDict["begin"] = button
+        buttonText = self.subtitle.render("Begin Game",True,Main.BLACK)
+        rect = buttonText.get_rect()
+        rect.center = button.center
+        screen.blit(buttonText,rect)
+
+
     def draw(self,screen):
-        self.clickDict = {}
-        self.game.draw_board(screen)
+        if self.screen == "game":
+            self.clickDict = {}
+            self.game.draw_board(screen)
 
-        self.blit_turn(screen)
+            self.blit_turn(screen)
 
-        self.draw_score(screen,self.width-180,80)
+            self.draw_score(screen,self.width-180,80)
 
-        if self.close_timeout is not None:
-            text = self.bigFont.render("GAME OVER",True,Main.PINK)
-            rect = text.get_rect()
-            rect.center = (self.width/2,self.height/2)
-            screen.blit(text,rect)
+            if self.close_timeout is not None:
+                text = self.bigFont.render("GAME OVER",True,Main.PINK)
+                rect = text.get_rect()
+                rect.center = (self.width/2,self.height/2)
+                screen.blit(text,rect)
 
-        self.clickDict["toggle"] = self.draw_toggle_bar(screen,self.width-180,self.height/2)
+            self.clickDict["toggle"] = self.draw_toggle_bar(screen,self.width-180,self.height/2)
 
-        if self.showLegal:
-            self.draw_legal(screen)
+            if self.showLegal:
+                self.draw_legal(screen)
 
-        # Show AI value prediction when computer is thinking or it's computer's turn
-        self.draw_ai_val(screen)
+            # Show AI value prediction when computer is thinking or it's computer's turn
+            self.draw_ai_val(screen)
+        else:
+            screen.fill(Main.DARK_GREEN)
+            self.draw_title(screen)
+            
 
     def next_turn(self):
         self.activePlayerIndex = (self.activePlayerIndex+1)%2
@@ -200,7 +264,7 @@ class Main:
         icon_image = pygame.image.load('logo.png')  # Relative path to your 32x32 image
         pygame.display.set_icon(icon_image)
 
-        pygame.display.set_caption("COSMOS - Othello")
+        pygame.display.set_caption("Tempest Othello Environment")
 
         while self.running:
             mode_switched = False
@@ -208,36 +272,62 @@ class Main:
                 if event.type == pygame.QUIT:
                     self.running = False
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_F1:
-                        # Cycle through AI modes
-                        modes = list(Main.AI_MODES.keys()) + ["player"]
-                        idx = modes.index(self.mode) if self.mode in modes else 0
-                        self.mode = modes[(idx + 1) % len(modes)]
-                        self.reset()
-                        mode_switched = True
-                        break
+                    if self.screen == "home":
+                        if event.key == pygame.K_F1 or event.key == pygame.K_RIGHT:
+                            # Cycle through AI modes
+                            modes = list(Main.AI_MODES.keys()) + ["player"]
+                            idx = modes.index(self.mode) if self.mode in modes else 0
+                            self.mode = modes[(idx + 1) % len(modes)]
+                            self.switch_comp()
+                            #self.reset()
+                            #mode_switched = True
+                            #break
+                        elif event.key == pygame.K_LEFT:
+                            modes = list(Main.AI_MODES.keys()) + ["player"]
+                            idx = modes.index(self.mode) if self.mode in modes else 0
+                            self.mode = modes[(idx - 1) % len(modes)]
+                            self.switch_comp()
+                            #self.reset()
+                            #mode_switched = True
+                            #break
+                            
+                        
+                        elif event.key == pygame.K_RETURN: #begin game
+                            self.begin_game()
+
+                
+                    
                     # Allow other keydowns to pass through (though we don't handle them)
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if self.close_timeout is None:
-                        mx,my = pygame.mouse.get_pos()
-                        sq = self.game.get_square_clicked(mx,my)
-                        if sq is not None:
-                            if self.computer is None or self.activePlayerIndex+1 != self.computer.color:
-                                x,y = sq
-                                successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
-                                if successful:
-                                    self.next_turn()
+                    if self.screen == "game":
+                        if self.close_timeout is None:
+                            mx,my = pygame.mouse.get_pos()
+                            sq = self.game.get_square_clicked(mx,my)
+                            if sq is not None:
+                                if self.computer is None or self.activePlayerIndex+1 != self.computer.color:
+                                    x,y = sq
+                                    successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
+                                    if successful:
+                                        self.next_turn()
 
-                        else: #look in clickDict
-                            for key in self.clickDict:
-                                if self.clickDict[key].collidepoint((mx,my)):
-                                    #true
-                                    if key == "toggle":
-                                        self.showLegal = not self.showLegal
-                                    break
+                            else: #look in clickDict
+                                for key in self.clickDict:
+                                    if self.clickDict[key].collidepoint((mx,my)):
+                                        #true
+                                        if key == "toggle":
+                                            self.showLegal = not self.showLegal
+                                        
+                                        break
+                    else:
+                        mx,my = pygame.mouse.get_pos()
+                        for key in self.clickDict:
+                            if self.clickDict[key].collidepoint((mx,my)):
+                                #true
+                                if key == "begin":
+                                    self.begin_game()
             
-            if mode_switched:
-                continue
+            #if mode_switched:
+            #    continue
 
                     
 
@@ -247,22 +337,35 @@ class Main:
             self.draw(screen)
             pygame.display.flip()
 
-            if self.close_timeout is not None:
-                if (datetime.now() - self.close_timeout).total_seconds()>=15:
-                    self.reset()
-                    #self.running = False
-            elif self.computer_active():
-                if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
-                    self.computer.pick()
-                    self.next_turn()
+            if self.screen == "game":
+                if self.close_timeout is not None:
+                    if (datetime.now() - self.close_timeout).total_seconds()>=15:
+                        self.reset()
+                        #self.running = False
+                elif self.computer_active():
+                    if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
+                        self.computer.pick()
+                        self.next_turn()
 
         pygame.quit()
 
         
 if __name__ == "__main__":
     GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player
+
+    AI_COLOR = "W" #choices: "B","W",[anything else]
+
+    if GAME_MODE != "player" and AI_COLOR not in ["B","W"]:
+        while True:
+            try:
+                col = int(input("Type 1 to play as Black, or 2 to play as White: "))
+                if col == 1 or col == 2:
+                    AI_COLOR = ("B" if col == 2 else "W")
+                    break
+            except ValueError:
+                print("Please try again!")
     
-    m = Main(mode=GAME_MODE,compColor = "B")
+    m = Main(mode=GAME_MODE,compColor = AI_COLOR)
     m.main()
 
 
