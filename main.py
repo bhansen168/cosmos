@@ -60,6 +60,8 @@ class Main:
         self.printed = False
         self.clickDict = {}
 
+        self.screen = "game" #set to "home"
+
         self.reset()
 
         
@@ -156,27 +158,39 @@ class Main:
                 # Print error to console for debugging
                 print(f"Value display error: {e}")
 
+    def draw_title(self,screen):
+        text = self.bigFont.render("Othello",True,Main.WHITE)
+        rect = text.get_rect()
+        rect.center = (self.width/2,self.height/8)
+        screen.blit(text,rect)
+        
+
     def draw(self,screen):
-        self.clickDict = {}
-        self.game.draw_board(screen)
+        if self.screen == "game":
+            self.clickDict = {}
+            self.game.draw_board(screen)
 
-        self.blit_turn(screen)
+            self.blit_turn(screen)
 
-        self.draw_score(screen,self.width-180,80)
+            self.draw_score(screen,self.width-180,80)
 
-        if self.close_timeout is not None:
-            text = self.bigFont.render("GAME OVER",True,Main.PINK)
-            rect = text.get_rect()
-            rect.center = (self.width/2,self.height/2)
-            screen.blit(text,rect)
+            if self.close_timeout is not None:
+                text = self.bigFont.render("GAME OVER",True,Main.PINK)
+                rect = text.get_rect()
+                rect.center = (self.width/2,self.height/2)
+                screen.blit(text,rect)
 
-        self.clickDict["toggle"] = self.draw_toggle_bar(screen,self.width-180,self.height/2)
+            self.clickDict["toggle"] = self.draw_toggle_bar(screen,self.width-180,self.height/2)
 
-        if self.showLegal:
-            self.draw_legal(screen)
+            if self.showLegal:
+                self.draw_legal(screen)
 
-        # Show AI value prediction when computer is thinking or it's computer's turn
-        self.draw_ai_val(screen)
+            # Show AI value prediction when computer is thinking or it's computer's turn
+            self.draw_ai_val(screen)
+        else:
+            screen.fill(Game.C_GREEN)
+            self.draw_title(screen)
+            
 
     def next_turn(self):
         self.activePlayerIndex = (self.activePlayerIndex+1)%2
