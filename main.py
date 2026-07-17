@@ -2,7 +2,6 @@
 GUI for the game
 """
 
-#generic pygame template
 
 import os,warnings,sys
 warnings.filterwarnings("ignore")
@@ -200,7 +199,7 @@ class Main:
         screen.blit(subtitle,rect)
         
 
-        text2 = self.subtitle.render("Mode: "+str(self.computer_name),True,Main.WHITE)
+        text2 = self.subtitle.render(f"Mode{('l' if self.computer_name!='PvP' else '')}: "+str(self.computer_name),True,Main.WHITE)
         #text2 = self.subtitle.render(str(self.computer_name)+" Model",True,Main.WHITE)
         rect = text2.get_rect()
         rect.center = (self.width/2,self.height/4 + 45)
