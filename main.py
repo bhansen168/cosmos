@@ -200,12 +200,12 @@ class Main:
         
 
         text2 = self.subtitle.render(f"Mode{('l' if self.computer_name!='PvP' else '')}: "+str(self.computer_name),True,Main.WHITE)
-        #text2 = self.subtitle.render(str(self.computer_name)+" Model",True,Main.WHITE)
         rect = text2.get_rect()
         rect.center = (self.width/2,self.height/4 + 45)
         screen.blit(text2,rect)
 
 
+        
         button = pygame.Rect(self.width/2 - 60, self.height/2 - 30,120,60)
         pygame.draw.rect(screen,Main.GRAY,button,border_radius = 5)
         self.clickDict["begin"] = button
@@ -213,6 +213,17 @@ class Main:
         rect = buttonText.get_rect()
         rect.center = button.center
         screen.blit(buttonText,rect)
+        
+        """
+        #Alternate style
+        button = pygame.Rect(self.width/2 - 60, self.height/2 - 30,120,60)
+        pygame.draw.rect(screen,Main.WHITE,button,width=2,border_radius = 5)
+        self.clickDict["begin"] = button
+        buttonText = self.subtitle.render("Begin Game",True,Main.WHITE)
+        rect = buttonText.get_rect()
+        rect.center = button.center
+        screen.blit(buttonText,rect)
+        """
 
 
     def draw(self,screen):
@@ -227,7 +238,8 @@ class Main:
             if self.close_timeout is not None:
                 text = self.bigFont.render("GAME OVER",True,Main.PINK)
                 rect = text.get_rect()
-                rect.center = (self.width/2,self.height/2)
+                rect.centerx = self.width/2
+                rect.bottom = self.height - 10
                 screen.blit(text,rect)
 
             self.clickDict["toggle"] = self.draw_toggle_bar(screen,self.width-180,self.height/2)
