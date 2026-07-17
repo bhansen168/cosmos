@@ -27,6 +27,7 @@ class Main:
     LIGHT_RED = (255,151,151)
     LIME = (50,205,50)
     GRAY = (210,210,210)
+    DARK_GREEN = (0,100,0)
     
     AI_MODES = {
         "dqn": ("DQN", ComputerDQN),
@@ -234,7 +235,7 @@ class Main:
             # Show AI value prediction when computer is thinking or it's computer's turn
             self.draw_ai_val(screen)
         else:
-            screen.fill(Game.C_GREEN)
+            screen.fill(Main.DARK_GREEN)
             self.draw_title(screen)
             
 
