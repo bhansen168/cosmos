@@ -26,14 +26,15 @@ class Main:
     LIGHT_GREEN = (162,255,184)
     LIGHT_RED = (255,151,151)
     LIME = (50,205,50)
+    GRAY = (210,210,210)
     
     AI_MODES = {
         "dqn": ("DQN", ComputerDQN),
         "genetic": ("Genetic", GeneticComputer),
-        "genetic_25": ("Genetic 25th Gen", GeneticComputer25),
+        "genetic_25": ("Genetic-25", GeneticComputer25),
         "supervised": ("Supervised", SupervisedComputer),
-        "minimax-2": ("Minimax", lambda g, c: create_minimax_computer(g, c, depth=2)),
-        "minimax-4": ("Minimax", lambda g, c: create_minimax_computer(g, c, depth=4)),
+        "minimax-2": ("Minimax-2", lambda g, c: create_minimax_computer(g, c, depth=2)),
+        "minimax-4": ("Minimax-4", lambda g, c: create_minimax_computer(g, c, depth=4)),
     }
 
     TESTING_ML = False
@@ -52,6 +53,7 @@ class Main:
         self.mode = mode
         self.computer = None
         self.computer_name = ""
+        self.compClass = None
         self.side = side
 
         self.compColor = (Game.WHITE if compColor == "W" else Game.BLACK)
@@ -60,15 +62,36 @@ class Main:
         self.printed = False
         self.clickDict = {}
 
-        self.screen = "game" #set to "home"
+        #self.screen = "game" #set to "home"
+        self.screen = "home"
 
+        self.switch_comp() #init necessary stuff
         self.reset()
 
-        
 
+    def switch_comp(self):
+        if self.mode in Main.AI_MODES: #NOT PVP
+            ai_name, ai_class = Main.AI_MODES[self.mode]
+            self.compClass = ai_class
+            self.computer_name = ai_name
+
+        else:
+            self.compClass = None
+            self.computer_name = "PvP"
+
+    def begin_game(self):
+        if self.mode in Main.AI_MODES:
+            self.computer = self.compClass(self.game,self.compColor)
+        else:
+            self.computer = None
+        self.screen = "game"
+        
+            
     def reset(self):
         self.game = Game(self.side)#never make save=True because then saves empty list
         self.activePlayerIndex = 0
+
+        '''
         if self.mode in Main.AI_MODES:
             ai_name, ai_class = Main.AI_MODES[self.mode]
             self.computer = ai_class(self.game, self.compColor)
@@ -77,7 +100,10 @@ class Main:
         else:
             self.computer = None
             print(f"Switched to {self.mode} mode (human vs human)")
+        '''
         self.close_timeout = None
+        self.screen = "home"
+        self.computer = None
         
 
 
@@ -159,11 +185,31 @@ class Main:
                 print(f"Value display error: {e}")
 
     def draw_title(self,screen):
-        text = self.bigFont.render("Othello",True,Main.WHITE)
+        text = self.bigFont.render("Tempest",True,Main.WHITE)
         rect = text.get_rect()
         rect.center = (self.width/2,self.height/8)
         screen.blit(text,rect)
+
+        subtitle = self.font.render("Automated Othello Bot",True,Main.WHITE)
+        rect = subtitle.get_rect()
+        rect.center = (self.width/2,self.height/8 + 40)
+        screen.blit(subtitle,rect)
         
+
+        text2 = self.font.render("Mode: "+str(self.computer_name),True,Main.WHITE)
+        rect = text2.get_rect()
+        rect.center = (self.width/2,self.height/4 + 30)
+        screen.blit(text2,rect)
+
+
+        button = pygame.Rect(self.width/2 - 60, self.height/2 - 30,120,60)
+        pygame.draw.rect(screen,Main.GRAY,button,border_radius = 5)
+        self.clickDict["begin"] = button
+        buttonText = self.font.render("Begin Game",True,Main.BLACK)
+        rect = buttonText.get_rect()
+        rect.center = button.center
+        screen.blit(buttonText,rect)
+
 
     def draw(self,screen):
         if self.screen == "game":
@@ -222,36 +268,62 @@ class Main:
                 if event.type == pygame.QUIT:
                     self.running = False
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_F1:
-                        # Cycle through AI modes
-                        modes = list(Main.AI_MODES.keys()) + ["player"]
-                        idx = modes.index(self.mode) if self.mode in modes else 0
-                        self.mode = modes[(idx + 1) % len(modes)]
-                        self.reset()
-                        mode_switched = True
-                        break
+                    if self.screen == "home":
+                        if event.key == pygame.K_F1 or event.key == pygame.K_RIGHT:
+                            # Cycle through AI modes
+                            modes = list(Main.AI_MODES.keys()) + ["player"]
+                            idx = modes.index(self.mode) if self.mode in modes else 0
+                            self.mode = modes[(idx + 1) % len(modes)]
+                            self.switch_comp()
+                            #self.reset()
+                            #mode_switched = True
+                            #break
+                        elif event.key == pygame.K_LEFT:
+                            modes = list(Main.AI_MODES.keys()) + ["player"]
+                            idx = modes.index(self.mode) if self.mode in modes else 0
+                            self.mode = modes[(idx - 1) % len(modes)]
+                            self.switch_comp()
+                            #self.reset()
+                            #mode_switched = True
+                            #break
+                            
+                        
+                        elif event.key == pygame.K_RETURN: #begin game
+                            self.begin_game()
+
+                
+                    
                     # Allow other keydowns to pass through (though we don't handle them)
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if self.close_timeout is None:
-                        mx,my = pygame.mouse.get_pos()
-                        sq = self.game.get_square_clicked(mx,my)
-                        if sq is not None:
-                            if self.computer is None or self.activePlayerIndex+1 != self.computer.color:
-                                x,y = sq
-                                successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
-                                if successful:
-                                    self.next_turn()
+                    if self.screen == "game":
+                        if self.close_timeout is None:
+                            mx,my = pygame.mouse.get_pos()
+                            sq = self.game.get_square_clicked(mx,my)
+                            if sq is not None:
+                                if self.computer is None or self.activePlayerIndex+1 != self.computer.color:
+                                    x,y = sq
+                                    successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
+                                    if successful:
+                                        self.next_turn()
 
-                        else: #look in clickDict
-                            for key in self.clickDict:
-                                if self.clickDict[key].collidepoint((mx,my)):
-                                    #true
-                                    if key == "toggle":
-                                        self.showLegal = not self.showLegal
-                                    break
+                            else: #look in clickDict
+                                for key in self.clickDict:
+                                    if self.clickDict[key].collidepoint((mx,my)):
+                                        #true
+                                        if key == "toggle":
+                                            self.showLegal = not self.showLegal
+                                        
+                                        break
+                    else:
+                        mx,my = pygame.mouse.get_pos()
+                        for key in self.clickDict:
+                            if self.clickDict[key].collidepoint((mx,my)):
+                                #true
+                                if key == "begin":
+                                    self.begin_game()
             
-            if mode_switched:
-                continue
+            #if mode_switched:
+            #    continue
 
                     
 
@@ -261,14 +333,15 @@ class Main:
             self.draw(screen)
             pygame.display.flip()
 
-            if self.close_timeout is not None:
-                if (datetime.now() - self.close_timeout).total_seconds()>=15:
-                    self.reset()
-                    #self.running = False
-            elif self.computer_active():
-                if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
-                    self.computer.pick()
-                    self.next_turn()
+            if self.screen == "game":
+                if self.close_timeout is not None:
+                    if (datetime.now() - self.close_timeout).total_seconds()>=15:
+                        self.reset()
+                        #self.running = False
+                elif self.computer_active():
+                    if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
+                        self.computer.pick()
+                        self.next_turn()
 
         pygame.quit()
 
