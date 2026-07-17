@@ -38,7 +38,7 @@ class Main:
 
     TESTING_ML = False
     
-    def __init__(self,side=8,mode = "dqn"):
+    def __init__(self,side=8,mode = "dqn",compColor = "W"):
         #mode is computer: pvcom
         #mode is player: pvp
         self.running = True
@@ -54,6 +54,8 @@ class Main:
         self.computer_name = ""
         self.side = side
 
+        self.compColor = (Game.WHITE if compColor == "W" else Game.BLACK)
+
         self.showLegal = False
         self.printed = False
         self.clickDict = {}
@@ -67,7 +69,7 @@ class Main:
         self.activePlayerIndex = 0
         if self.mode in Main.AI_MODES:
             ai_name, ai_class = Main.AI_MODES[self.mode]
-            self.computer = ai_class(self.game, Game.WHITE)
+            self.computer = ai_class(self.game, self.compColor)
             self.computer_name = ai_name
             print(f"Switched to {self.mode}: {self.computer.name if hasattr(self.computer, 'name') else self.computer.__class__.__name__}")
         else:
@@ -142,7 +144,7 @@ class Main:
     def computer_active(self):
         return (self.computer is not None and self.activePlayerIndex+1 == self.computer.color)
 
-    def draw_ai_val(self):
+    def draw_ai_val(self,screen):
         if self.computer_active() and hasattr(self.computer, 'get_value_prediction') and Main.TESTING_ML:
             try:
                 value = self.computer.get_value_prediction()
@@ -174,7 +176,7 @@ class Main:
             self.draw_legal(screen)
 
         # Show AI value prediction when computer is thinking or it's computer's turn
-        self.draw_ai_val()
+        self.draw_ai_val(screen)
 
     def next_turn(self):
         self.activePlayerIndex = (self.activePlayerIndex+1)%2
@@ -220,7 +222,7 @@ class Main:
                         mx,my = pygame.mouse.get_pos()
                         sq = self.game.get_square_clicked(mx,my)
                         if sq is not None:
-                            if self.activePlayerIndex+1 == Game.BLACK or self.computer is None:
+                            if self.computer is None or self.activePlayerIndex+1 != self.computer.color:
                                 x,y = sq
                                 successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
                                 if successful:
@@ -260,7 +262,7 @@ class Main:
 if __name__ == "__main__":
     GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player
     
-    m = Main(mode=GAME_MODE)
+    m = Main(mode=GAME_MODE,compColor = "B")
     m.main()
 
 
