@@ -36,7 +36,7 @@ class Main:
         "minimax-4": ("Minimax", lambda g, c: create_minimax_computer(g, c, depth=4)),
     }
 
-    TESTING_ML = False
+    TESTING_ML = True
     
     def __init__(self,side=8,mode = "dqn",compColor = "W"):
         #mode is computer: pvcom
