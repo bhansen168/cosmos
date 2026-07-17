@@ -261,8 +261,20 @@ class Main:
         
 if __name__ == "__main__":
     GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player
+
+    AI_COLOR = "W" #choices: "B","W",[anything else]
+
+    if GAME_MODE != "player" and AI_COLOR not in ["B","W"]:
+        while True:
+            try:
+                col = int(input("Type 1 to play as Black, or 2 to play as White: "))
+                if col == 1 or col == 2:
+                    AI_COLOR = ("B" if col == 2 else "W")
+                    break
+            except ValueError:
+                print("Please try again!")
     
-    m = Main(mode=GAME_MODE,compColor = "B")
+    m = Main(mode=GAME_MODE,compColor = AI_COLOR)
     m.main()
 
 
