@@ -65,12 +65,30 @@ class Main:
         self.printed = False
         self.clickDict = {}
 
-        #self.screen = "game" #set to "home"
+        #feather for titles
+        self.init_feathers()
+
+
         self.screen = "home"
 
         self.switch_comp() #init necessary stuff
         self.reset()
 
+    def init_feathers(self):
+        self.featherSurfR = pygame.Surface((230,435),pygame.SRCALPHA)
+        img = pygame.image.load("quillbk.png")
+        img2 = pygame.image.load("quillwh.png")
+
+        
+
+        self.featherSurfR.blit(img,(0,0))
+        self.featherSurfR.blit(pygame.transform.flip(img2,True,False),(0,0))
+        self.featherRectR = self.featherSurfR.get_rect()
+        self.featherRectR.center = (5*self.width/6,self.height/2)
+
+        self.featherSurfL = pygame.transform.flip(self.featherSurfR,True,False)
+        self.featherRectL = self.featherSurfL.get_rect()
+        self.featherRectL.center = (self.width/6,self.height/2)
 
     def switch_comp(self):
         if self.mode in Main.AI_MODES: #NOT PVP
@@ -213,6 +231,9 @@ class Main:
         rect = buttonText.get_rect()
         rect.center = button.center
         screen.blit(buttonText,rect)
+
+        screen.blit(self.featherSurfR,self.featherRectR)
+        screen.blit(self.featherSurfL,self.featherRectL)
         
         """
         #Alternate style
@@ -365,7 +386,7 @@ class Main:
 if __name__ == "__main__":
     GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player
 
-    AI_COLOR = "W" #choices: "B","W",[anything else]
+    AI_COLOR = "B" #choices: "B","W",[anything else]
 
     if GAME_MODE != "player" and AI_COLOR not in ["B","W"]:
         while True:
