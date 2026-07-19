@@ -47,9 +47,9 @@ class Main:
         self.width = 800
         self.height = 600
   
-        self.font = pygame.font.SysFont("Comic Sans",20)
         self.subtitle = pygame.font.Font("williamshakespearewf.ttf",45)
-        #self.subtitle = pygame.font.Font("hamlettertia-18.ttf",25)
+        self.modeFont = pygame.font.Font("Augusta.ttf",35)
+        #self.modeFont =pygame.font.SysFont("Comic Sans",20)
         #self.subtitle = pygame.font.Font("Shakespeare-First-Folio.ttf",15)
         self.bigFont = pygame.font.Font("Shakespeare-First-Folio.ttf",40)#pygame.font.SysFont("Comic Sans",40)
 
@@ -217,7 +217,7 @@ class Main:
         screen.blit(subtitle,rect)
         
 
-        text2 = self.subtitle.render(f"Mode{('l' if self.computer_name.lower()!='pvp (the players)' else '')}: "+str(self.computer_name),True,Main.WHITE)
+        text2 = self.modeFont.render(f"Mode{('l' if self.computer_name.lower()!='pvp (the players)' else '')}: "+str(self.computer_name),True,Main.WHITE)
         rect = text2.get_rect()
         rect.center = (self.width/2,self.height/4 + 45)
         screen.blit(text2,rect)
