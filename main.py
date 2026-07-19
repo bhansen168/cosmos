@@ -29,12 +29,12 @@ class Main:
     DARK_GREEN = (0,100,0)
     
     AI_MODES = {
-        "dqn": ("DQN", ComputerDQN),
-        "genetic": ("Genetic", GeneticComputer),
-        "genetic_25": ("Genetic-25", GeneticComputer25),
-        "supervised": ("Supervised", SupervisedComputer),
-        "minimax-2": ("Minimax-2", lambda g, c: create_minimax_computer(g, c, depth=2)),
-        "minimax-4": ("Minimax-4", lambda g, c: create_minimax_computer(g, c, depth=4)),
+        "dqn": ("Hamlet (DQN)", ComputerDQN),
+        "genetic": ("Prospero (Gen-50)", GeneticComputer),
+        "genetic_25": ("Ariel (Gen-25)", GeneticComputer25),
+        "supervised": ("Horatio (SL)", SupervisedComputer),
+        "minimax-2": ("Hotspur (MM-2)", lambda g, c: create_minimax_computer(g, c, depth=2)),
+        "minimax-4": ("Iago (MM-4)", lambda g, c: create_minimax_computer(g, c, depth=4)),
     }
 
     TESTING_ML = False
@@ -98,7 +98,7 @@ class Main:
 
         else:
             self.compClass = None
-            self.computer_name = "PvP"
+            self.computer_name = "PvP (The Players)"
 
     def begin_game(self):
         if self.mode in Main.AI_MODES:
@@ -217,7 +217,7 @@ class Main:
         screen.blit(subtitle,rect)
         
 
-        text2 = self.subtitle.render(f"Mode{('l' if self.computer_name!='PvP' else '')}: "+str(self.computer_name),True,Main.WHITE)
+        text2 = self.subtitle.render(f"Mode{('l' if self.computer_name.lower()!='pvp (the players)' else '')}: "+str(self.computer_name),True,Main.WHITE)
         rect = text2.get_rect()
         rect.center = (self.width/2,self.height/4 + 45)
         screen.blit(text2,rect)
