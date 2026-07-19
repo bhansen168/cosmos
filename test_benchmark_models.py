@@ -207,9 +207,13 @@ class MatchTests(unittest.TestCase):
                     baseline_games=0,
                     minimax_games=0,
                     search_depth=1,
+                    endgame_exact_empties=0,
                     opening_plies=2,
                     validation_candidates=1,
                     validation_openings=1,
+                    validation_folds=2,
+                    challenge_openings=1,
+                    hall_of_fame_opponents=0,
                     elite_count=1,
                     tournament_size=2,
                     random_immigrants=1,
@@ -224,6 +228,8 @@ class MatchTests(unittest.TestCase):
             self.assertEqual(payload["generation"], 0)
             self.assertEqual(len(payload["population"]), 4)
             self.assertIn("champion", payload)
+            self.assertEqual(len(payload["hall_of_fame"]), 1)
+            self.assertIn("rng_state", payload["training_state"])
             self.assertEqual(len(payload["champion"]["genome"]), GENOME_SIZE)
 
             player = build_player(f"genetic:{checkpoint}")
@@ -259,9 +265,13 @@ class MatchTests(unittest.TestCase):
                     baseline_games=0,
                     minimax_games=0,
                     search_depth=1,
+                    endgame_exact_empties=0,
                     opening_plies=2,
                     validation_candidates=1,
                     validation_openings=1,
+                    validation_folds=2,
+                    challenge_openings=1,
+                    hall_of_fame_opponents=0,
                     elite_count=1,
                     tournament_size=2,
                     random_immigrants=1,
@@ -271,7 +281,43 @@ class MatchTests(unittest.TestCase):
                     resume=checkpoint,
                 )
             )
-            self.assertEqual(load_checkpoint(resumed_checkpoint)["generation"], 1)
+            resumed = load_checkpoint(resumed_checkpoint)
+            self.assertEqual(resumed["generation"], 1)
+
+            continuous_directory = Path(temporary_directory) / "continuous"
+            continuous_checkpoint = train(
+                TrainingConfig(
+                    generations=2,
+                    population_size=4,
+                    games_per_pair=1,
+                    coevolution_opponents=1,
+                    baseline_games=0,
+                    minimax_games=0,
+                    search_depth=1,
+                    endgame_exact_empties=0,
+                    opening_plies=2,
+                    validation_candidates=1,
+                    validation_openings=1,
+                    validation_folds=2,
+                    challenge_openings=1,
+                    hall_of_fame_opponents=0,
+                    elite_count=1,
+                    tournament_size=2,
+                    random_immigrants=1,
+                    checkpoint_every=1,
+                    output_directory=continuous_directory,
+                    seed=9,
+                )
+            )
+            continuous = load_checkpoint(continuous_checkpoint)
+            self.assertEqual(
+                [stored["genome"] for stored in resumed["population"]],
+                [stored["genome"] for stored in continuous["population"]],
+            )
+            self.assertEqual(
+                resumed["champion"]["genome"],
+                continuous["champion"]["genome"],
+            )
 
     def test_legacy_genetic_checkpoint_upgrades_and_uses_current_winner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -310,6 +356,7 @@ class MatchTests(unittest.TestCase):
                 player.genome,
                 tuple(upgraded["champion"]["genome"]),
             )
+            self.assertEqual(player.endgame_exact_empties, 8)
             self.assertNotEqual(
                 upgraded["champion"]["genome"],
                 upgraded["best_ever"]["genome"],
