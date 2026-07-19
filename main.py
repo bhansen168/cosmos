@@ -76,8 +76,8 @@ class Main:
 
     def init_feathers(self):
         self.featherSurfR = pygame.Surface((230,435),pygame.SRCALPHA)
-        img = pygame.image.load("quillbk.png")
-        img2 = pygame.image.load("quillwh.png")
+        img = pygame.transform.scale(pygame.image.load("quill2b.png"),(226,435))
+        img2 = pygame.transform.scale(pygame.image.load("quill2w.png"),(226,435))
 
         
 
@@ -327,6 +327,8 @@ class Main:
                         
                         elif event.key == pygame.K_RETURN: #begin game
                             self.begin_game()
+                        elif event.key == pygame.K_u:
+                            self.init_feathers()
 
                 
                     
