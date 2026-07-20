@@ -227,7 +227,7 @@ class Main:
         rect.center = (self.width/2,self.height/4 + 45)
         screen.blit(text2,rect)
 
-        if self.pickColor:
+        if self.pickColor and "pvp" not in self.computer_name.lower():
             #draw boxes
             text3 = self.modeFont.render("Bot plays as:",True,Main.WHITE)
             rect = text3.get_rect()
