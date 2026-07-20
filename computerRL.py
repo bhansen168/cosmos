@@ -14,7 +14,7 @@ from computer import Computer,create_minimax_computer,create_genetic_computer
 
 MUTE_PRINTS = True
 EPOCHS = 10000
-VERSION = "v02"
+VERSION = "v03"
 
 def predict_finish(start,amtCompleted):
     #start is datetime from start, amtCompleted is 0-1 decimal

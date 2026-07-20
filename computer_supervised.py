@@ -111,8 +111,11 @@ class CompSupervised:
                     break
                 
         self.games = []#formatted
-        
-        for file in self.files:
+
+
+
+        for f in range(len(self.files)):#file in self.files:
+            file = self.files[f]
             path = CompSupervised.DATA+"/"+file
             path2 = CompSupervised.FORMATTED+"/"+file.replace(".","")+".fmtd"
             
@@ -131,8 +134,9 @@ class CompSupervised:
                     new = from_tmpst(path)
 
                 self.format_data(new,savePath = path2)
+            print(f"Processed file {f+1}/{len(self.files)} ({round((f+1)/len(self.files) * 100,2)}%)")
 
-        print(f"Games: {len(games):,}")
+        print(f"Games: {len(self.games):,}")
 
         #print("Formatting data...")
         #self.format_data(games)

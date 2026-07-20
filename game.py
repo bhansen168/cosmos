@@ -36,7 +36,7 @@ class Game:
 
     DIRS = [(0,1),(1,1),(1,0),(1,-1),(0,-1),(-1,-1),(-1,0),(-1,1)]
 
-    SYNTHFILE = os.getcwd()+"/data/synthetic.tmpst" #for storing game history as synthetic data
+    SYNTHFILE = os.getcwd()+"/data/synthetic2.tmpst" #for storing game history as synthetic data
     
     def __init__(self,side=8,save = False): #side is number of squares per side
         self.side = side
