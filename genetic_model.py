@@ -3,9 +3,10 @@
 
 The current genome contains opening, middlegame, and endgame weights for ten
 normalized board features. Training screens the full population with a fast
-search, then uses full-depth alpha-beta against a fixed validation suite to
-choose the checkpoint champion. Games combine sampled co-evolution with paired
-randomized openings against fixed baselines.
+search, then uses full-depth alpha-beta, rotating validation folds, and paired
+champion challenges to choose the checkpoint champion. Games combine sampled
+co-evolution with paired randomized openings against fixed and historical
+baselines.
 
 Version-1 checkpoints containing the original twelve-gene, one-ply evaluator
 are upgraded in memory when loaded or resumed. Existing checkpoint files are
@@ -46,6 +47,7 @@ CHECKPOINT_VERSION = 2
 SUPPORTED_CHECKPOINT_VERSIONS = (1, CHECKPOINT_VERSION)
 DEFAULT_OUTPUT_DIRECTORY = Path(__file__).resolve().parent / "models" / "genetic"
 DEFAULT_SEARCH_DEPTH = 2
+DEFAULT_ENDGAME_EXACT_EMPTIES = 8
 PHASE_NAMES = ("opening", "middlegame", "endgame")
 FEATURE_NAMES = (
     "disc_difference",
@@ -336,11 +338,15 @@ class GeneticPlayer:
         genome: Sequence[float],
         name: str = "Genetic",
         search_depth: int = DEFAULT_SEARCH_DEPTH,
+        endgame_exact_empties: int = DEFAULT_ENDGAME_EXACT_EMPTIES,
     ) -> None:
         if search_depth < 1:
             raise ValueError("Genetic search depth must be at least 1")
+        if endgame_exact_empties < 0:
+            raise ValueError("Exact endgame threshold cannot be negative")
         self.genome = tuple(_upgrade_legacy_genome(genome))
         self.search_depth = search_depth
+        self.endgame_exact_empties = endgame_exact_empties
         self.name = name
 
     @classmethod
@@ -354,6 +360,12 @@ class GeneticPlayer:
         search_depth = int(
             payload.get("config", {}).get("search_depth", DEFAULT_SEARCH_DEPTH)
         )
+        endgame_exact_empties = int(
+            payload.get("config", {}).get(
+                "endgame_exact_empties",
+                DEFAULT_ENDGAME_EXACT_EMPTIES,
+            )
+        )
         validation_score = champion.get("validation_score")
         if validation_score is None:
             quality = f"fitness {float(champion.get('fitness', 0.0)):.3f}"
@@ -366,6 +378,7 @@ class GeneticPlayer:
                 f"depth {search_depth}, {checkpoint_path.name})"
             ),
             search_depth=search_depth,
+            endgame_exact_empties=endgame_exact_empties,
         )
 
     @staticmethod
@@ -512,6 +525,12 @@ class GeneticPlayer:
         best_value = float("-inf")
         best_moves: list[LegalMove] = []
         alpha = float("-inf")
+        empty_count = sum(
+            square == EMPTY for row in game.board for square in row
+        )
+        remaining_depth = self.search_depth - 1
+        if empty_count <= self.endgame_exact_empties:
+            remaining_depth = max(remaining_depth, empty_count - 1)
 
         for move in self._ordered_moves(legal_moves):
             game.play(color, move)
@@ -519,7 +538,7 @@ class GeneticPlayer:
                 value = self._alpha_beta(
                     game,
                     opponent(color),
-                    self.search_depth - 1,
+                    remaining_depth,
                     alpha,
                     float("inf"),
                     color,
@@ -560,6 +579,24 @@ class Individual:
         )
 
 
+def _same_genome(first: Individual, second: Individual) -> bool:
+    return tuple(first.genome) == tuple(second.genome)
+
+
+def _add_to_hall_of_fame(
+    hall_of_fame: list[Individual],
+    individual: Individual,
+    maximum_size: int,
+) -> None:
+    if maximum_size <= 0:
+        return
+    if any(_same_genome(stored, individual) for stored in hall_of_fame):
+        return
+    hall_of_fame.append(individual.copy())
+    if len(hall_of_fame) > maximum_size:
+        del hall_of_fame[: len(hall_of_fame) - maximum_size]
+
+
 @dataclass
 class TrainingConfig:
     generations: int = 50
@@ -572,21 +609,30 @@ class TrainingConfig:
     minimax_weight: float = 3.0
     training_search_depth: int = 1
     search_depth: int = DEFAULT_SEARCH_DEPTH
+    endgame_exact_empties: int = DEFAULT_ENDGAME_EXACT_EMPTIES
     opening_plies: int = 10
     validation_candidates: int = 4
     validation_openings: int = 2
     validation_seed: int = 10_000
     validation_every: int = 2
+    validation_folds: int = 4
+    validation_min_improvement: float = 0.01
+    challenge_openings: int = 6
+    challenge_score: float = 0.55
+    hall_of_fame_size: int = 8
+    hall_of_fame_opponents: int = 1
+    hall_of_fame_weight: float = 2.0
     elite_count: int = 3
     tournament_size: int = 4
     crossover_rate: float = 0.90
     mutation_rate: float = 0.25
     mutation_sigma: float = 0.25
     gene_limit: float = 4.0
-    margin_weight: float = 0.25
+    margin_weight: float = 0.10
     random_immigrants: int = 2
     stagnation_generations: int = 6
     mutation_boost: float = 2.0
+    stagnation_immigrants: int = 4
     checkpoint_every: int = 5
     output_directory: Path = field(default_factory=lambda: DEFAULT_OUTPUT_DIRECTORY)
     seed: int = 0
@@ -609,6 +655,8 @@ class TrainingConfig:
             or self.search_depth < 1
         ):
             raise ValueError("search depths must be at least 1")
+        if self.endgame_exact_empties < 0:
+            raise ValueError("exact endgame threshold cannot be negative")
         if self.minimax_weight <= 0.0:
             raise ValueError("minimax fitness weight must be positive")
         if self.opening_plies < 0:
@@ -621,6 +669,18 @@ class TrainingConfig:
             raise ValueError("validation openings must be at least 1")
         if self.validation_every < 1:
             raise ValueError("validation interval must be at least 1")
+        if self.validation_folds < 1:
+            raise ValueError("validation folds must be at least 1")
+        if self.validation_min_improvement < 0.0:
+            raise ValueError("validation minimum improvement cannot be negative")
+        if self.challenge_openings < 1:
+            raise ValueError("challenge openings must be at least 1")
+        if not 0.5 < self.challenge_score <= 1.0:
+            raise ValueError("challenge score must be greater than 0.5 and at most 1")
+        if self.hall_of_fame_size < 0 or self.hall_of_fame_opponents < 0:
+            raise ValueError("hall-of-fame sizes cannot be negative")
+        if self.hall_of_fame_weight <= 0.0:
+            raise ValueError("hall-of-fame weight must be positive")
         if not 1 <= self.elite_count < self.population_size:
             raise ValueError("elite count must be between 1 and population size - 1")
         if not 2 <= self.tournament_size <= self.population_size:
@@ -643,6 +703,8 @@ class TrainingConfig:
             raise ValueError("stagnation generations must be at least 1")
         if self.mutation_boost < 1.0:
             raise ValueError("mutation boost must be at least 1")
+        if self.stagnation_immigrants < 0:
+            raise ValueError("stagnation immigrants cannot be negative")
         if self.checkpoint_every < 1:
             raise ValueError("checkpoint interval must be at least 1")
 
@@ -793,6 +855,7 @@ def evaluate_population(
     population: Sequence[Individual],
     config: TrainingConfig,
     rng: random.Random,
+    hall_of_fame: Sequence[Individual] = (),
 ) -> None:
     """Score genomes with sampled co-evolution and weighted fixed opponents."""
     players = [
@@ -800,6 +863,7 @@ def evaluate_population(
             individual.genome,
             f"Genome {index}",
             search_depth=config.training_search_depth,
+            endgame_exact_empties=0,
         )
         for index, individual in enumerate(population)
     ]
@@ -852,6 +916,23 @@ def evaluate_population(
             )
         )
 
+    archive_count = min(config.hall_of_fame_opponents, len(hall_of_fame))
+    if archive_count:
+        archive = rng.sample(list(hall_of_fame), archive_count)
+        for archive_index, individual in enumerate(archive):
+            baselines.append(
+                (
+                    GeneticPlayer(
+                        individual.genome,
+                        f"Hall of fame {archive_index + 1}",
+                        search_depth=config.training_search_depth,
+                        endgame_exact_empties=0,
+                    ),
+                    1,
+                    config.hall_of_fame_weight,
+                )
+            )
+
     scenario_sets = [
         [_make_scenario(rng, config.opening_plies) for _ in range(opening_count)]
         for _, opening_count, _ in baselines
@@ -900,8 +981,11 @@ def validate_candidates(
     config: TrainingConfig,
     generation: int,
 ) -> Individual:
-    """Choose a champion on a fixed suite comparable across generations."""
-    validation_rng = random.Random(config.validation_seed)
+    """Choose the best candidate on one rotating validation fold."""
+    fold = (generation // config.validation_every) % config.validation_folds
+    validation_rng = random.Random(
+        config.validation_seed + fold * 1_000_003
+    )
     scenarios = [
         _make_scenario(validation_rng, config.opening_plies)
         for _ in range(config.validation_openings)
@@ -914,6 +998,7 @@ def validate_candidates(
             candidate.genome,
             "Validation candidate",
             search_depth=config.search_depth,
+            endgame_exact_empties=config.endgame_exact_empties,
         )
         weighted_points = 0.0
         total_weight = 0.0
@@ -957,7 +1042,11 @@ def validate_candidates(
         evaluated.validation_score = weighted_points / max(1.0, total_weight)
         evaluated.validation_games = total_games
         evaluated.validation_breakdown = breakdown
-        evaluated.origin_generation = generation
+        evaluated.origin_generation = (
+            candidate.origin_generation
+            if candidate.origin_generation is not None
+            else generation
+        )
         validated.append(evaluated)
 
     return max(
@@ -969,6 +1058,68 @@ def validate_candidates(
             individual.fitness,
         ),
     )
+
+
+def challenge_champion(
+    challenger: Individual,
+    champion: Individual,
+    config: TrainingConfig,
+    generation: int,
+) -> dict[str, Any]:
+    """Play a paired, changing head-to-head promotion match."""
+    challenger_player = GeneticPlayer(
+        challenger.genome,
+        "Champion challenger",
+        search_depth=config.search_depth,
+        endgame_exact_empties=config.endgame_exact_empties,
+    )
+    champion_player = GeneticPlayer(
+        champion.genome,
+        "Incumbent champion",
+        search_depth=config.search_depth,
+        endgame_exact_empties=config.endgame_exact_empties,
+    )
+    rng = random.Random(
+        config.validation_seed + 10_000_019 + generation * 1_000_033
+    )
+    wins = 0
+    losses = 0
+    draws = 0
+    disc_margin = 0
+
+    for _ in range(config.challenge_openings):
+        scenario = _make_scenario(rng, config.opening_plies)
+        challenger_black, champion_black = _play_color_pair(
+            challenger_player,
+            champion_player,
+            scenario,
+        )
+        for outcome, challenger_color in (
+            (challenger_black, BLACK),
+            (champion_black, WHITE),
+        ):
+            if outcome.winner is None:
+                draws += 1
+            elif outcome.winner == challenger_color:
+                wins += 1
+            else:
+                losses += 1
+            color_margin = outcome.black_score - outcome.white_score
+            disc_margin += (
+                color_margin if challenger_color == BLACK else -color_margin
+            )
+
+    games = wins + losses + draws
+    match_score = (wins + 0.5 * draws) / games
+    return {
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+        "games": games,
+        "score": match_score,
+        "average_disc_margin": disc_margin / games,
+        "passed": match_score >= config.challenge_score,
+    }
 
 
 def _tournament_select(
@@ -1028,9 +1179,17 @@ def reproduce(
     rng: random.Random,
     champion: Individual | None = None,
     sigma_multiplier: float = 1.0,
+    immigrant_count: int | None = None,
 ) -> list[Individual]:
     ranked = sorted(population, key=lambda individual: individual.fitness, reverse=True)
-    offspring_target = config.population_size - config.random_immigrants
+    if immigrant_count is None:
+        immigrant_count = config.random_immigrants
+    maximum_immigrants = max(
+        0,
+        config.population_size - config.elite_count - 1,
+    )
+    immigrant_count = min(immigrant_count, maximum_immigrants)
+    offspring_target = config.population_size - immigrant_count
     next_population = [
         Individual(ranked[index].genome.copy())
         for index in range(min(config.elite_count, len(ranked)))
@@ -1054,6 +1213,25 @@ def reproduce(
     while len(next_population) < config.population_size:
         next_population.append(_random_individual(config, rng))
     return next_population
+
+
+def _reproduction_settings(
+    config: TrainingConfig,
+    stagnation_count: int,
+    last_recovery_stagnation: int = 0,
+) -> tuple[float, int, bool]:
+    recovery = (
+        stagnation_count > 0
+        and stagnation_count % config.stagnation_generations == 0
+        and stagnation_count != last_recovery_stagnation
+    )
+    if not recovery:
+        return 1.0, config.random_immigrants, False
+    return (
+        config.mutation_boost,
+        config.random_immigrants + config.stagnation_immigrants,
+        True,
+    )
 
 
 def create_population(config: TrainingConfig, rng: random.Random) -> list[Individual]:
@@ -1119,11 +1297,19 @@ def _config_payload(config: TrainingConfig) -> dict[str, Any]:
         "minimax_weight": config.minimax_weight,
         "training_search_depth": config.training_search_depth,
         "search_depth": config.search_depth,
+        "endgame_exact_empties": config.endgame_exact_empties,
         "opening_plies": config.opening_plies,
         "validation_candidates": config.validation_candidates,
         "validation_openings": config.validation_openings,
         "validation_seed": config.validation_seed,
         "validation_every": config.validation_every,
+        "validation_folds": config.validation_folds,
+        "validation_min_improvement": config.validation_min_improvement,
+        "challenge_openings": config.challenge_openings,
+        "challenge_score": config.challenge_score,
+        "hall_of_fame_size": config.hall_of_fame_size,
+        "hall_of_fame_opponents": config.hall_of_fame_opponents,
+        "hall_of_fame_weight": config.hall_of_fame_weight,
         "elite_count": config.elite_count,
         "tournament_size": config.tournament_size,
         "crossover_rate": config.crossover_rate,
@@ -1134,6 +1320,7 @@ def _config_payload(config: TrainingConfig) -> dict[str, Any]:
         "random_immigrants": config.random_immigrants,
         "stagnation_generations": config.stagnation_generations,
         "mutation_boost": config.mutation_boost,
+        "stagnation_immigrants": config.stagnation_immigrants,
         "checkpoint_every": config.checkpoint_every,
         "seed": config.seed,
     }
@@ -1145,8 +1332,12 @@ def save_checkpoint(
     population: Sequence[Individual],
     generation_best: Individual,
     champion: Individual,
+    hall_of_fame: Sequence[Individual],
     config: TrainingConfig,
     stagnation_count: int,
+    rng: random.Random,
+    last_challenge: dict[str, Any] | None = None,
+    last_recovery_stagnation: int = 0,
 ) -> None:
     champion_payload = _individual_payload(champion)
     payload = {
@@ -1161,9 +1352,17 @@ def save_checkpoint(
         "champion": champion_payload,
         # Compatibility alias for older consumers. Selection now uses champion.
         "best_ever": champion_payload,
+        "hall_of_fame": [
+            _individual_payload(individual) for individual in hall_of_fame
+        ],
         "population": [_individual_payload(individual) for individual in population],
         "config": _config_payload(config),
-        "training_state": {"validation_stagnation": stagnation_count},
+        "training_state": {
+            "validation_stagnation": stagnation_count,
+            "rng_state": rng.getstate(),
+            "last_challenge": last_challenge,
+            "last_recovery_stagnation": last_recovery_stagnation,
+        },
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -1225,6 +1424,11 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
             raise ValueError(
                 f"Checkpoint population contains an invalid genome: {checkpoint_path}"
             )
+    for stored in payload.get("hall_of_fame", []):
+        if len(stored.get("genome", [])) != GENOME_SIZE:
+            raise ValueError(
+                f"Checkpoint hall of fame contains an invalid genome: {checkpoint_path}"
+            )
     if not payload.get("champion"):
         payload["champion"] = payload.get("generation_best") or payload.get("best_ever")
     return payload
@@ -1240,6 +1444,57 @@ def _restore_population(payload: dict[str, Any]) -> list[Individual]:
     return population
 
 
+def _nested_tuple(value: Any) -> Any:
+    """Undo JSON's tuple-to-list conversion for random.Random.setstate."""
+    if isinstance(value, list):
+        return tuple(_nested_tuple(item) for item in value)
+    return value
+
+
+def _restore_hall_of_fame(
+    payload: dict[str, Any],
+    checkpoint_path: Path,
+    maximum_size: int,
+) -> list[Individual]:
+    hall_of_fame: list[Individual] = []
+    stored_hall = payload.get("hall_of_fame")
+    if stored_hall is not None:
+        for stored in stored_hall:
+            _add_to_hall_of_fame(
+                hall_of_fame,
+                _individual_from_payload(stored),
+                maximum_size,
+            )
+    else:
+        # Version-2 checkpoints written before the archive was introduced can
+        # recover their historical champions from neighboring periodic saves.
+        resume_generation = int(payload.get("generation", 0))
+        for candidate_path in sorted(checkpoint_path.parent.glob("genetic_gen_*.json")):
+            try:
+                candidate_payload = load_checkpoint(candidate_path)
+                candidate_generation = int(candidate_payload.get("generation", 0))
+                if candidate_generation > resume_generation:
+                    continue
+                stored = candidate_payload.get("champion")
+                if stored:
+                    _add_to_hall_of_fame(
+                        hall_of_fame,
+                        _individual_from_payload(stored),
+                        maximum_size,
+                    )
+            except ValueError:
+                continue
+
+    stored_champion = payload.get("champion")
+    if stored_champion:
+        _add_to_hall_of_fame(
+            hall_of_fame,
+            _individual_from_payload(stored_champion),
+            maximum_size,
+        )
+    return hall_of_fame
+
+
 def train(config: TrainingConfig) -> Path:
     """Run evolution and return the final checkpoint path."""
     config.validate()
@@ -1248,26 +1503,43 @@ def train(config: TrainingConfig) -> Path:
     config.output_directory.mkdir(parents=True, exist_ok=True)
 
     champion: Individual | None = None
+    hall_of_fame: list[Individual] = []
     stagnation_count = 0
+    last_recovery_stagnation = 0
+    last_challenge: dict[str, Any] | None = None
     if config.resume is not None:
-        resume_payload = load_checkpoint(config.resume)
+        resume_path = Path(config.resume).expanduser().resolve()
+        resume_payload = load_checkpoint(resume_path)
         evaluated_population = _restore_population(resume_payload)
         stored_champion = resume_payload.get("champion")
         if stored_champion:
             champion = _individual_from_payload(stored_champion)
-        stagnation_count = int(
-            resume_payload.get("training_state", {}).get(
-                "validation_stagnation",
-                0,
-            )
+        hall_of_fame = _restore_hall_of_fame(
+            resume_payload,
+            resume_path,
+            config.hall_of_fame_size,
         )
+        training_state = resume_payload.get("training_state", {})
+        stagnation_count = int(training_state.get("validation_stagnation", 0))
+        last_recovery_stagnation = int(
+            training_state.get("last_recovery_stagnation", 0)
+        )
+        stored_challenge = training_state.get("last_challenge")
+        if isinstance(stored_challenge, dict):
+            last_challenge = dict(stored_challenge)
+        stored_rng_state = training_state.get("rng_state")
+        if stored_rng_state is not None:
+            try:
+                rng.setstate(_nested_tuple(stored_rng_state))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Checkpoint contains an invalid RNG state") from exc
         start_generation = int(resume_payload["generation"]) + 1
         if start_generation >= config.generations:
-            return Path(config.resume).expanduser().resolve()
-        sigma_multiplier = (
-            config.mutation_boost
-            if stagnation_count >= config.stagnation_generations
-            else 1.0
+            return resume_path
+        sigma_multiplier, immigrant_count, recovery = _reproduction_settings(
+            config,
+            stagnation_count,
+            last_recovery_stagnation,
         )
         population = reproduce(
             evaluated_population,
@@ -1275,10 +1547,18 @@ def train(config: TrainingConfig) -> Path:
             rng,
             champion=champion,
             sigma_multiplier=sigma_multiplier,
+            immigrant_count=immigrant_count,
         )
+        if recovery:
+            last_recovery_stagnation = stagnation_count
+            print(
+                "Applying stagnation recovery: "
+                f"mutation sigma x{sigma_multiplier:g}, "
+                f"{immigrant_count} immigrants."
+            )
         print(
-            f"Resuming after generation {start_generation} from "
-            f"{Path(config.resume).expanduser().resolve()}"
+            f"Resuming at generation {start_generation + 1} from {resume_path} "
+            f"with {len(hall_of_fame)} hall-of-fame genomes."
         )
     else:
         population = create_population(config, rng)
@@ -1290,7 +1570,7 @@ def train(config: TrainingConfig) -> Path:
     for generation in range(start_generation, config.generations):
         generation_started = time.perf_counter()
         screening_started = time.perf_counter()
-        evaluate_population(population, config, rng)
+        evaluate_population(population, config, rng, hall_of_fame)
         screening_elapsed = time.perf_counter() - screening_started
         ranked = sorted(population, key=lambda individual: individual.fitness, reverse=True)
         generation_best = ranked[0].copy()
@@ -1302,25 +1582,67 @@ def train(config: TrainingConfig) -> Path:
             or is_final_generation
         )
         validation_leader: Individual | None = None
+        challenge_result: dict[str, Any] | None = None
+        validation_advantage: float | None = None
+        promoted = False
         validation_elapsed = 0.0
         if should_validate:
             validation_started = time.perf_counter()
             validation_leader = validate_candidates(ranked, config, generation)
-            validation_elapsed = time.perf_counter() - validation_started
-            champion_improved = (
-                champion is None
-                or champion.validation_score is None
-                or (
-                    validation_leader.validation_score is not None
-                    and validation_leader.validation_score
-                    > champion.validation_score + 1e-12
-                )
-            )
-            if champion_improved:
+            if champion is None or champion.validation_score is None:
                 champion = validation_leader.copy()
+                _add_to_hall_of_fame(
+                    hall_of_fame,
+                    champion,
+                    config.hall_of_fame_size,
+                )
                 stagnation_count = 0
+                promoted = True
             else:
-                stagnation_count += 1
+                incumbent = validate_candidates([champion], config, generation)
+                assert validation_leader.validation_score is not None
+                assert incumbent.validation_score is not None
+                validation_advantage = (
+                    validation_leader.validation_score
+                    - incumbent.validation_score
+                )
+                if _same_genome(validation_leader, champion):
+                    champion = incumbent
+                    stagnation_count += 1
+                elif validation_advantage >= config.validation_min_improvement:
+                    challenge_result = challenge_champion(
+                        validation_leader,
+                        incumbent,
+                        config,
+                        generation,
+                    )
+                    last_challenge = {
+                        **challenge_result,
+                        "generation": generation,
+                        "validation_advantage": validation_advantage,
+                    }
+                    if challenge_result["passed"]:
+                        _add_to_hall_of_fame(
+                            hall_of_fame,
+                            incumbent,
+                            config.hall_of_fame_size,
+                        )
+                        champion = validation_leader.copy()
+                        _add_to_hall_of_fame(
+                            hall_of_fame,
+                            champion,
+                            config.hall_of_fame_size,
+                        )
+                        stagnation_count = 0
+                        last_recovery_stagnation = 0
+                        promoted = True
+                    else:
+                        champion = incumbent
+                        stagnation_count += 1
+                else:
+                    champion = incumbent
+                    stagnation_count += 1
+            validation_elapsed = time.perf_counter() - validation_started
         assert champion is not None
 
         fitnesses = [individual.fitness for individual in population]
@@ -1332,6 +1654,21 @@ def train(config: TrainingConfig) -> Path:
             validation_text = "skipped"
         else:
             validation_text = f"{validation_leader.validation_score:.4f}"
+        if challenge_result is not None:
+            champion_state = "promoted" if promoted else "held"
+            promotion_text = (
+                f", challenge={challenge_result['score']:.1%} "
+                f"({challenge_result['wins']}-{challenge_result['losses']}-"
+                f"{challenge_result['draws']}), champion={champion_state}"
+            )
+        elif promoted:
+            promotion_text = ", champion=promoted"
+        elif validation_advantage is not None:
+            promotion_text = (
+                f", validation_delta={validation_advantage:+.4f}, champion=held"
+            )
+        else:
+            promotion_text = ""
         print(
             f"Generation {generation + 1}/{config.generations}: "
             f"fitness best={generation_best.fitness:.4f}, "
@@ -1343,6 +1680,7 @@ def train(config: TrainingConfig) -> Path:
             f"screen={screening_elapsed:.2f}s, "
             f"validation={validation_elapsed:.2f}s, "
             f"total={time.perf_counter() - generation_started:.2f}s"
+            f"{promotion_text}"
         )
 
         should_save = (
@@ -1358,8 +1696,12 @@ def train(config: TrainingConfig) -> Path:
                 population,
                 generation_best,
                 champion,
+                hall_of_fame,
                 config,
                 stagnation_count,
+                rng,
+                last_challenge,
+                last_recovery_stagnation,
             )
             save_checkpoint(
                 config.output_directory / "latest.json",
@@ -1367,17 +1709,21 @@ def train(config: TrainingConfig) -> Path:
                 population,
                 generation_best,
                 champion,
+                hall_of_fame,
                 config,
                 stagnation_count,
+                rng,
+                last_challenge,
+                last_recovery_stagnation,
             )
             final_checkpoint = checkpoint
             print(f"  Saved checkpoint: {checkpoint}")
 
         if generation < config.generations - 1:
-            sigma_multiplier = (
-                config.mutation_boost
-                if stagnation_count >= config.stagnation_generations
-                else 1.0
+            sigma_multiplier, immigrant_count, recovery = _reproduction_settings(
+                config,
+                stagnation_count,
+                last_recovery_stagnation,
             )
             population = reproduce(
                 population,
@@ -1385,7 +1731,15 @@ def train(config: TrainingConfig) -> Path:
                 rng,
                 champion=champion,
                 sigma_multiplier=sigma_multiplier,
+                immigrant_count=immigrant_count,
             )
+            if recovery:
+                last_recovery_stagnation = stagnation_count
+                print(
+                    "  Applying stagnation recovery for the next generation: "
+                    f"mutation sigma x{sigma_multiplier:g}, "
+                    f"{immigrant_count} immigrants."
+                )
 
     assert final_checkpoint is not None
     print(
@@ -1400,7 +1754,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Evolve a three-phase Othello evaluator with alpha-beta search, "
-            "paired randomized openings, and fixed champion validation."
+            "paired randomized openings, rotating validation, and robust "
+            "champion promotion."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -1440,6 +1795,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--search-depth", type=int, default=defaults.search_depth)
     parser.add_argument(
+        "--endgame-exact-empties",
+        type=int,
+        default=defaults.endgame_exact_empties,
+        help=(
+            "solve positions exactly at or below this many empty squares for "
+            "validation and deployed checkpoint players (0 disables)"
+        ),
+    )
+    parser.add_argument(
         "--opening-plies",
         type=int,
         default=defaults.opening_plies,
@@ -1462,6 +1826,48 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=defaults.validation_every,
         help="run full-depth champion validation every N generations",
     )
+    parser.add_argument(
+        "--validation-folds",
+        type=int,
+        default=defaults.validation_folds,
+        help="number of deterministic opening suites rotated across validations",
+    )
+    parser.add_argument(
+        "--validation-min-improvement",
+        type=float,
+        default=defaults.validation_min_improvement,
+        help="minimum same-fold score advantage required to challenge the champion",
+    )
+    parser.add_argument(
+        "--challenge-openings",
+        type=int,
+        default=defaults.challenge_openings,
+        help="fresh paired openings in a champion promotion match",
+    )
+    parser.add_argument(
+        "--challenge-score",
+        type=float,
+        default=defaults.challenge_score,
+        help="match-point share required to replace the incumbent champion",
+    )
+    parser.add_argument(
+        "--hall-of-fame-size",
+        type=int,
+        default=defaults.hall_of_fame_size,
+        help="maximum number of unique historical champions retained",
+    )
+    parser.add_argument(
+        "--hall-of-fame-opponents",
+        type=int,
+        default=defaults.hall_of_fame_opponents,
+        help="historical champions sampled per genome during screening",
+    )
+    parser.add_argument(
+        "--hall-of-fame-weight",
+        type=float,
+        default=defaults.hall_of_fame_weight,
+        help="fitness weight for games against historical champions",
+    )
     parser.add_argument("--elite-count", type=int, default=defaults.elite_count)
     parser.add_argument("--tournament-size", type=int, default=defaults.tournament_size)
     parser.add_argument("--crossover-rate", type=float, default=defaults.crossover_rate)
@@ -1480,6 +1886,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=defaults.stagnation_generations,
     )
     parser.add_argument("--mutation-boost", type=float, default=defaults.mutation_boost)
+    parser.add_argument(
+        "--stagnation-immigrants",
+        type=int,
+        default=defaults.stagnation_immigrants,
+        help="extra random genomes injected on each stagnation recovery generation",
+    )
     parser.add_argument(
         "--checkpoint-every",
         type=int,
@@ -1515,11 +1927,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         minimax_weight=args.minimax_weight,
         training_search_depth=args.training_search_depth,
         search_depth=args.search_depth,
+        endgame_exact_empties=args.endgame_exact_empties,
         opening_plies=args.opening_plies,
         validation_candidates=args.validation_candidates,
         validation_openings=args.validation_openings,
         validation_seed=args.validation_seed,
         validation_every=args.validation_every,
+        validation_folds=args.validation_folds,
+        validation_min_improvement=args.validation_min_improvement,
+        challenge_openings=args.challenge_openings,
+        challenge_score=args.challenge_score,
+        hall_of_fame_size=args.hall_of_fame_size,
+        hall_of_fame_opponents=args.hall_of_fame_opponents,
+        hall_of_fame_weight=args.hall_of_fame_weight,
         elite_count=args.elite_count,
         tournament_size=args.tournament_size,
         crossover_rate=args.crossover_rate,
@@ -1530,6 +1950,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         random_immigrants=args.random_immigrants,
         stagnation_generations=args.stagnation_generations,
         mutation_boost=args.mutation_boost,
+        stagnation_immigrants=args.stagnation_immigrants,
         checkpoint_every=args.checkpoint_every,
         output_directory=args.output_directory,
         seed=args.seed,
