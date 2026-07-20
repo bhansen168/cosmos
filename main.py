@@ -14,6 +14,10 @@ from datetime import datetime,timedelta
 sys.path.append(os.getcwd())
 from game import Game
 from computer import ComputerDQN,ComputerSupervised as SupervisedComputer,ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer
+import importlib
+computer2_module = importlib.import_module("computer2-PHASEOUT")
+GeneticComputer5 = computer2_module.Computer6
+GeneticComputer25_5 = computer2_module.Computer7
 
 
 class Main:
@@ -32,6 +36,8 @@ class Main:
         "dqn": ("DQN", ComputerDQN),
         "genetic": ("Genetic", GeneticComputer),
         "genetic_25": ("Genetic-25", GeneticComputer25),
+        "genetic_d5": ("Genetic-D5", GeneticComputer5),
+        "genetic_25_d5": ("Genetic-25-D5", GeneticComputer25_5),
         "supervised": ("Supervised", SupervisedComputer),
         "minimax-2": ("Minimax-2", lambda g, c: create_minimax_computer(g, c, depth=2)),
         "minimax-4": ("Minimax-4", lambda g, c: create_minimax_computer(g, c, depth=4)),

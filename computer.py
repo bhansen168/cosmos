@@ -125,9 +125,12 @@ def create_minimax_computer(game,color,depth=2):
     return ModelComputer(game,color,MinimaxPlayer(depth=depth))
 
 
-def create_genetic_computer(game,color,checkpoint_path):
+def create_genetic_computer(game,color,checkpoint_path, search_depth=None):
     from genetic_model import GeneticPlayer
-    return ModelComputer(game,color,GeneticPlayer.from_checkpoint(checkpoint_path))
+    player = GeneticPlayer.from_checkpoint(checkpoint_path)
+    if search_depth is not None:
+        player.search_depth = search_depth
+    return ModelComputer(game,color,player)
 
 
 

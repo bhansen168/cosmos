@@ -107,3 +107,41 @@ class Computer5(Computer): # Genetic algorithm model - 25th generation
         """Return the genetic model's estimated value for the current position."""
         return self.computer.get_value_prediction()
 
+
+class Computer6(Computer): # Genetic algorithm model - latest depth 5
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","genetic","latest.json")
+    def __init__(self,game=None,color=None,path=None):
+        super().__init__(game,color)
+
+        if path is None:
+            path = Computer6.PATH
+        self.path = os.path.abspath(path)
+        self.computer = create_genetic_computer(game, color, self.path, search_depth=5)
+        self.name = f"Genetic Latest Depth 5 ({os.path.basename(self.path)})"
+
+    def pick(self):
+        self.computer.pick()
+
+    def get_value_prediction(self):
+        """Return the genetic model's estimated value for the current position."""
+        return self.computer.get_value_prediction()
+
+
+class Computer7(Computer): # Genetic algorithm model - 25th gen depth 5
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","genetic","genetic_gen_0024.json")
+    def __init__(self,game=None,color=None,path=None):
+        super().__init__(game,color)
+
+        if path is None:
+            path = Computer7.PATH
+        self.path = os.path.abspath(path)
+        self.computer = create_genetic_computer(game, color, self.path, search_depth=5)
+        self.name = f"Genetic 25th Gen Depth 5 ({os.path.basename(self.path)})"
+
+    def pick(self):
+        self.computer.pick()
+
+    def get_value_prediction(self):
+        """Return the genetic model's estimated value for the current position."""
+        return self.computer.get_value_prediction()
+
