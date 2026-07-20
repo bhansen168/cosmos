@@ -123,7 +123,7 @@ class CompSupervised:
                 #already formatted
                 with open(path2,"rb") as fileRef:
                     data = pickle.load(fileRef)
-                self.games.extend(data)
+                self.games.extend(data) #should already be adjusted for 0-8
                 
             else:
                 if file.endswith(".wtb"):
@@ -193,7 +193,7 @@ class CompSupervised:
                 
                 # Check for Othello WTHOR Pass notation (often 0,0 or specifically flagged)
                 # Adjust these coordinates based on how your parse_wtb labels a pass:
-                if mx == 0 and my == 0: 
+                if mx == 0 and my == 0:  #PROBLEMATIC: NOT SURE HOW PASSES FORMATTED IN KAGGLE DATASET
                     # It's a pass! Assign it the 64th index.
                     action = 64 
                 else:
