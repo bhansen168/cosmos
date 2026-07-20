@@ -38,6 +38,7 @@ class Main:
     }
 
     TESTING_ML = False
+    FPS = 60
     
     def __init__(self,side=8,mode = "dqn",compColor = "W"):
         #mode is computer: pvcom
@@ -52,7 +53,8 @@ class Main:
         #self.modeFont =pygame.font.SysFont("Comic Sans",20)
         #self.subtitle = pygame.font.Font("Shakespeare-First-Folio.ttf",15)
         self.bigFont = pygame.font.Font("Shakespeare-First-Folio.ttf",40)#pygame.font.SysFont("Comic Sans",40)
-
+        self.font = pygame.font.SysFont("Comic Sans",20) #for gameplay
+        
         self.mode = mode
         self.computer = None
         self.computer_name = ""
@@ -60,6 +62,7 @@ class Main:
         self.side = side
 
         self.compColor = (Game.WHITE if compColor == "W" else Game.BLACK)
+        self.pickColor = (compColor not in ["W","B"])
 
         self.showLegal = False
         self.printed = False
@@ -70,6 +73,8 @@ class Main:
 
 
         self.screen = "home"
+
+        self.clock = pygame.time.Clock()
 
         self.switch_comp() #init necessary stuff
         self.reset()
@@ -98,7 +103,7 @@ class Main:
 
         else:
             self.compClass = None
-            self.computer_name = "PvP (The Players)"
+            self.computer_name = "The Players (PvP)"
 
     def begin_game(self):
         if self.mode in Main.AI_MODES:
@@ -217,14 +222,28 @@ class Main:
         screen.blit(subtitle,rect)
         
 
-        text2 = self.modeFont.render(f"Mode{('l' if self.computer_name.lower()!='pvp (the players)' else '')}: "+str(self.computer_name),True,Main.WHITE)
+        text2 = self.modeFont.render(f"Mode{('l' if self.computer_name.lower()!='The Players (PvP)' else '')}: "+str(self.computer_name),True,Main.WHITE)
         rect = text2.get_rect()
         rect.center = (self.width/2,self.height/4 + 45)
         screen.blit(text2,rect)
 
+        if self.pickColor:
+            #draw boxes
+            text3 = self.modeFont.render("Bot plays as:",True,Main.WHITE)
+            rect = text3.get_rect()
+            rect.centery = self.height/2-30
+            rect.x = self.width/2-30-rect.width/2-5
+
+            box  = pygame.Rect(rect.x + rect.width+ 10,self.height/2-55,50,50)
+            #pygame.draw.rect(screen,(Main.WHITE if self.compColor == "W" else Main.BLACK),box)
+            pygame.draw.circle(screen,(Main.WHITE if self.compColor == Game.WHITE else Main.BLACK),box.center,25)
+            screen.blit(text3,rect)
+            self.clickDict["color"] = box
+            
+
 
         
-        button = pygame.Rect(self.width/2 - 60, self.height/2 - 30,120,60)
+        button = pygame.Rect(self.width/2 - 60, self.height*5/8 - 30,120,60)
         pygame.draw.rect(screen,Main.GRAY,button,border_radius = 5)
         self.clickDict["begin"] = button
         buttonText = self.subtitle.render("Begin Game",True,Main.BLACK)
@@ -327,8 +346,9 @@ class Main:
                         
                         elif event.key == pygame.K_RETURN: #begin game
                             self.begin_game()
-                        elif event.key == pygame.K_u:
-                            self.init_feathers()
+                        elif event.key == pygame.K_c:
+                            self.compColor = (Game.BLACK if self.compColor == Game.WHITE else Game.WHITE)
+                        
 
                 
                     
@@ -351,7 +371,7 @@ class Main:
                                         #true
                                         if key == "toggle":
                                             self.showLegal = not self.showLegal
-                                        
+
                                         break
                     else:
                         mx,my = pygame.mouse.get_pos()
@@ -360,6 +380,8 @@ class Main:
                                 #true
                                 if key == "begin":
                                     self.begin_game()
+                                elif key == "color":
+                                    self.compColor = (Game.BLACK if self.compColor == Game.WHITE else Game.WHITE)
             
             #if mode_switched:
             #    continue
@@ -382,14 +404,16 @@ class Main:
                         self.computer.pick()
                         self.next_turn()
 
+            self.clock.tick(Main.FPS)
+
         pygame.quit()
 
         
 if __name__ == "__main__":
     GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player
 
-    AI_COLOR = "B" #choices: "B","W",[anything else]
-
+    AI_COLOR = ""#"B" #choices: "B","W",[anything else]
+    """
     if GAME_MODE != "player" and AI_COLOR not in ["B","W"]:
         while True:
             try:
@@ -399,7 +423,7 @@ if __name__ == "__main__":
                     break
             except ValueError:
                 print("Please try again!")
-    
+    """
     m = Main(mode=GAME_MODE,compColor = AI_COLOR)
     m.main()
 
