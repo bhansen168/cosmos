@@ -14,6 +14,10 @@ from datetime import datetime,timedelta
 sys.path.append(os.getcwd())
 from game import Game
 from computer import ComputerDQN,ComputerSupervised as SupervisedComputer,ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer
+import importlib
+computer2_module = importlib.import_module("computer2-PHASEOUT")
+GeneticComputer5 = computer2_module.Computer6
+GeneticComputer25_5 = computer2_module.Computer7
 
 
 class Main:
@@ -29,6 +33,19 @@ class Main:
     DARK_GREEN = (0,100,0)
     
     AI_MODES = {
+<<<<<<< HEAD
+        "dqn": ("DQN", ComputerDQN),
+        "genetic": ("Genetic", GeneticComputer),
+        "genetic_25": ("Genetic-25", GeneticComputer25),
+        "genetic_d5": ("Genetic-D5", GeneticComputer5),
+        "genetic_25_d5": ("Genetic-25-D5", GeneticComputer25_5),
+        "supervised": ("Supervised", SupervisedComputer),
+        "minimax-2": ("Minimax-2", lambda g, c: create_minimax_computer(g, c, depth=2)),
+        "minimax-4": ("Minimax-4", lambda g, c: create_minimax_computer(g, c, depth=4)),
+    }
+
+    TESTING_ML = True
+=======
         "dqn": ("Hamlet (DQN)", ComputerDQN),
         "genetic": ("Prospero (Gen-50)", GeneticComputer),
         "genetic_25": ("Ariel (Gen-25)", GeneticComputer25),
@@ -39,6 +56,7 @@ class Main:
 
     TESTING_ML = False
     FPS = 60
+>>>>>>> e6b4aa71ea0977f850cbad6bf354c167da94ebd2
     
     def __init__(self,side=8,mode = "dqn",compColor = "W"):
         #mode is computer: pvcom
