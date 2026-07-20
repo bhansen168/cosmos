@@ -166,7 +166,7 @@ class ComputerDQN(Computer): #incorporates AI model -- use PTH extension
 
 class ComputerSupervised(Computer):
     #formerly known as Computer3
-    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","supervised","wthor-kaggle.bard")
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","supervised","synth-20260720133316.bard")
     #dataset sourced from Kaggle (CSV) and WTHOR (French Othello Federation)
     def __init__(self,game=None,color=None,path=None):
         super().__init__(game,color)
