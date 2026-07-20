@@ -113,7 +113,7 @@ class CompSupervised:
         self.games = []#formatted
 
 
-
+        print("Loading data...")
         for f in range(len(self.files)):#file in self.files:
             file = self.files[f]
             path = CompSupervised.DATA+"/"+file
@@ -134,7 +134,7 @@ class CompSupervised:
                     new = from_tmpst(path)
 
                 self.format_data(new,savePath = path2)
-            print(f"Processed file {f+1}/{len(self.files)} ({round((f+1)/len(self.files) * 100,2)}%)")
+            print(f"Processed file {f+1}/{len(self.files)} -- \"{file}\" -- ({round((f+1)/len(self.files) * 100,2)}%)")
 
         print(f"Games: {len(self.games):,}")
 
