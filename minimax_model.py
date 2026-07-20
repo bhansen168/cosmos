@@ -8,7 +8,7 @@ from typing import Sequence
 from othello_engine import (
     BOARD_SIZE,
     EMPTY,
-    HeadlessOthello,
+    HeadlessOthello, #Game
     LegalMove,
     opponent,
 )
@@ -172,6 +172,9 @@ class MinimaxPlayer:
         rng: random.Random,
     ) -> tuple[int, int]:
         del rng
+
+        game = game.copy()
+        
         ordered_moves = self._ordered_moves(legal_moves)
         best_move = ordered_moves[0]
         best_value = -self.WIN_SCORE * 2

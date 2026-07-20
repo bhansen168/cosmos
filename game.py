@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os,warnings,sys,pickle
 from dataclasses import dataclass
+from copy import deepcopy
 
 warnings.filterwarnings("ignore")
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
@@ -50,6 +51,14 @@ class Game:
         self._set_middle()
 
         self.save = save
+
+    def copy(self):
+        out = Game(side = self.side,save = self.save)
+        out.board = deepcopy(self.board)
+        out.no_legal_moves = self.no_legal_moves
+        out._move_history = deepcopy(self._move_history)
+        out.save = self.save
+        return out
 
     def _set_middle(self):
         self.board[3][3] = Game.WHITE

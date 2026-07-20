@@ -3,13 +3,14 @@ GUI for the game
 """
 
 
-import os,warnings,sys
+import os,warnings,sys,threading
 warnings.filterwarnings("ignore")
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
 pygame.init()
 
 from datetime import datetime,timedelta
+from copy import deepcopy
 
 sys.path.append(os.getcwd())
 from game import Game
@@ -34,10 +35,10 @@ class Main:
     
     AI_MODES = {
         "dqn": ("Hamlet (DQN)", ComputerDQN),
-        "genetic": ("Prospero (G50)", GeneticComputer),
-        "genetic_25": ("Ariel (G25)", GeneticComputer25),
-        "genetic_d5": ("Caliban (G50-D5)", GeneticComputer5),
-        "genetic_25_d5": ("Stephano (G25-D5)", GeneticComputer25_5),
+        "genetic": ("Prospero (G50-2)", GeneticComputer),
+        "genetic_25": ("Ariel (G25-2)", GeneticComputer25),
+        "genetic_d5": ("Caliban (G50-5)", GeneticComputer5),
+        "genetic_25_d5": ("Stephano (G25-5)", GeneticComputer25_5),
         "supervised": ("Horatio (SL)", SupervisedComputer),
         "minimax-2": ("Hotspur (MM-2)", lambda g, c: create_minimax_computer(g, c, depth=2)),
         "minimax-4": ("Henry V (MM-4)", lambda g, c: create_minimax_computer(g, c, depth=4)),
@@ -71,6 +72,9 @@ class Main:
         self.compColor = (Game.WHITE if compColor == "W" else Game.BLACK)
         self.pickColor = (compColor not in ["W","B"])
 
+        self.compLoc = None
+        self.thread =  None
+
         self.showLegal = False
         self.printed = False
         self.clickDict = {}
@@ -101,6 +105,20 @@ class Main:
         self.featherSurfL = pygame.transform.flip(self.featherSurfR,True,False)
         self.featherRectL = self.featherSurfL.get_rect()
         self.featherRectL.center = (self.width/6,self.height/2)
+
+    def comp_pick(self):
+        #save previous state
+        oldBoard = deepcopy(self.game.board)
+        lastBefore = (self.game.last.copy() if self.game.last is not None else None)
+
+        #save pick
+        self.computer.pick()
+        self.compLoc = self.game.last.copy()
+
+        #revert state
+        self.game.last = lastBefore
+        self.game.board = oldBoard
+        
 
     def switch_comp(self):
         if self.mode in Main.AI_MODES: #NOT PVP
@@ -407,9 +425,18 @@ class Main:
                         self.reset()
                         #self.running = False
                 elif self.computer_active():
-                    if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
-                        self.computer.pick()
-                        self.next_turn()
+                    if self.thread is None:
+                        self.thread = threading.Thread(target = self.comp_pick)
+                        self.thread.start()
+
+                    if self.compLoc is not None:
+                        if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
+                            #    self.comp_pick()
+                            x,y = self.compLoc
+                            self.game.place_piece(self.computer.color,x,y)
+                            self.next_turn()
+                            self.compLoc = None
+                            self.thread = None
 
             self.clock.tick(Main.FPS)
 
