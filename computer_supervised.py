@@ -88,11 +88,57 @@ def legal_moves_to_np_arr(legal,actionDim):
 def from_tmpst(file):
     with open(file,"rb") as fileRef:
         games = pickle.load(fileRef)
+        games = [[(x+1,y+1) for x,y in game] for game in games]
     return games
 
 class CompSupervised:
     DATA = os.getcwd()+"/data"
-    
+    FORMATTED = os.getcwd()+"/data-formatted-sup"
+    EXTS = [".wtb",".csv",".tmpst"]
+
+    ENV = None
+
+    def __init__(self,useSynthetic = True):
+        from parse_csv import parse_csv
+        from readWTB import parse_wtb
+
+        #self.files = [file for file in os.listdir(CompSupervised.DATA) if (file.endswith(".wtb") or file.endswith(".csv") or file.endswith(".tmpst"))]
+        self.files = []
+        for file in os.listdir(CompSupervised.DATA):
+            for ext in CompSupervised.EXTS:
+                if file.endswith(ext):
+                    self.files.append(file)
+                    break
+                
+        self.games = []#formatted
+        
+        for file in self.files:
+            path = CompSupervised.DATA+"/"+file
+            path2 = CompSupervised.FORMATTED+"/"+file.replace(".","")+".fmtd"
+            
+            if os.path.exists(path2):
+                #already formatted
+                with open(path2,"rb") as fileRef:
+                    data = pickle.load(fileRef)
+                self.games.extend(data)
+                
+            else:
+                if file.endswith(".wtb"):
+                    new = parse_wtb(path)
+                elif file.endswith(".csv"):
+                    new = parse_csv(path)
+                elif useSynthetic: #assume .tmpst ext
+                    new = from_tmpst(path)
+
+                self.format_data(new,savePath = path2)
+
+        print(f"Games: {len(games):,}")
+
+        #print("Formatting data...")
+        #self.format_data(games)
+
+        
+    '''
     def __init__(self,useSynthetic = True):
         from parse_csv import parse_csv
         from readWTB import parse_wtb
@@ -105,7 +151,7 @@ class CompSupervised:
                 new = parse_wtb(path)
             elif file.endswith(".tmpst"):
                 if useSynthetic:
-                    new = from_tmpst(file)
+                    new = from_tmpst(path)
             else:
                 new = parse_csv(path)
             games.extend(new)
@@ -114,20 +160,32 @@ class CompSupervised:
 
         print("Formatting data...")
         self.format_data(games)
+    '''
 
-    def format_data(self, games):
+    '''
+    WTH -- bytes, (0,0) for pass, 1-8
+    CSV -- bytes, ? for pass, 1-8
+    TMPST -- coords, passes not denoted?, 0-7
+    '''
+
+    def format_data(self, games, savePath = None):
         from computerRL import OthelloEnv
 
-        env = OthelloEnv()
-        self.games = []
-        
+        start = datetime.now()
+
+        if CompSupervised.ENV is None:
+            CompSupervised.ENV = OthelloEnv()
+        #self.games = []
+
+        output = []
         for i in range(len(games)):
             game = games[i]
             gameFormatted = []
-            board, _ = env.reset() # Assuming env.reset() returns (initial_board, info)
+            board, _ = CompSupervised.ENV.reset() # Assuming env.reset() returns (initial_board, info)
             
             for move in game:
                 mx, my = move
+
                 
                 # Check for Othello WTHOR Pass notation (often 0,0 or specifically flagged)
                 # Adjust these coordinates based on how your parse_wtb labels a pass:
@@ -142,21 +200,25 @@ class CompSupervised:
                 # CRITICAL: Grab the actual active player color from your environment 
                 # BEFORE taking the step, so perspective alignment is 100% correct.
                 # Adjust 'env.current_player' to match your actual OthelloEnv attribute name.
-                active_player = env.current_player 
+                active_player = CompSupervised.ENV.current_player 
                 
                 gameFormatted.append([board, action, active_player])
                 
                 # Advance the environment
                 if action < 64: #64 is pass
-                    board, _, _, _, _ = env.step(action)
+                    board, _, _, _, _ = CompSupervised.ENV.step(action)
                 
-            self.games.append(gameFormatted)
+            output.append(gameFormatted)
 
-            if i%200 == 199 or i+1==len(games):
-                print("Formatted {i+1} / {len(games)} ({round((i+1)/len(games) * 100,2)}%) -- finish formatting at "+predict_finish(start,(i+1)/len(games)))
-                
-                
 
+            
+            if savePath is None and  (i%200 == 199 or i+1==len(games)):
+                print(f"Formatted {i+1} / {len(games)} ({round((i+1)/len(games) * 100,2)}%) -- finish formatting at "+predict_finish(start,(i+1)/len(games)))
+                
+        if savePath is not None:
+            with open(savePath,"wb") as file1:
+                pickle.dump(output,file1)
+        self.games.extend(output)
             
 
             
@@ -286,4 +348,4 @@ def load_agent(file):
 
 if __name__ == "__main__":
     cs = CompSupervised()
-    cs.train(savePath=os.getcwd()+f"/models/supervised/wthor-kaggle-{str(datetime.now()).split('.')[0].replace('-','').replace(' ','').replace(':','')}.bard")
+    cs.train(savePath=os.getcwd()+f"/models/supervised/synth-{str(datetime.now()).split('.')[0].replace('-','').replace(' ','').replace(':','')}.bard")
