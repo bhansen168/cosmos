@@ -298,13 +298,13 @@ def build_player(spec: str) -> Player:
         or normalized.endswith(".bard")
     ):
         try:
-            from computer2 import Computer3
+            from computer import ComputerSupervised
         except ImportError as exc:
             raise RuntimeError(
                 "Bard checkpoints require NumPy and XGBoost. Run the benchmark "
                 "with the same Python environment used to train Bard."
             ) from exc
-        return Computer3(path=normalize_bard_checkpoint(stripped))
+        return ComputerSupervised(path=normalize_bard_checkpoint(stripped))
     if (
         normalized.startswith("genetic:")
         or normalized.startswith("ga:")

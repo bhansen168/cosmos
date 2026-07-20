@@ -165,7 +165,7 @@ class ComputerDQN(Computer): #incorporates AI model -- use PTH extension
         return self.agent.get_value_prediction(state, legal_moves)
 
 class ComputerSupervised(Computer):
-    #formerly known as Computer2
+    #formerly known as Computer3
     PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","supervised","wthor-kaggle.bard")
     #dataset sourced from Kaggle (CSV) and WTHOR (French Othello Federation)
     def __init__(self,game=None,color=None,path=None):
