@@ -448,6 +448,7 @@ class GeneticPlayer:
         beta: float,
         root_color: int,
     ) -> float:
+
         legal_moves = game.legal_moves(color)
         other_color = opponent(color)
         if not legal_moves:
@@ -532,6 +533,7 @@ class GeneticPlayer:
         if empty_count <= self.endgame_exact_empties:
             remaining_depth = max(remaining_depth, empty_count - 1)
 
+        game = game.copy()
         for move in self._ordered_moves(legal_moves):
             game.play(color, move)
             try:
