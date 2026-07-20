@@ -85,19 +85,27 @@ def legal_moves_to_np_arr(legal,actionDim):
 
     return arr
 
+def from_tmpst(file):
+    with open(file,"rb") as fileRef:
+        games = pickle.load(fileRef)
+    return games
+
 class CompSupervised:
     DATA = os.getcwd()+"/data"
     
-    def __init__(self):
+    def __init__(self,useSynthetic = True):
         from parse_csv import parse_csv
         from readWTB import parse_wtb
 
-        self.files = [file for file in os.listdir(CompSupervised.DATA) if (file.endswith(".wtb") or file.endswith(".csv"))]
+        self.files = [file for file in os.listdir(CompSupervised.DATA) if (file.endswith(".wtb") or file.endswith(".csv") or file.endswith(".tmpst"))]
         games = []
         for file in self.files:
             path = CompSupervised.DATA+"/"+file
             if file.endswith(".wtb"):
                 new = parse_wtb(path)
+            elif file.endswith(".tmpst"):
+                if useSynthetic:
+                    new = from_tmpst(file)
             else:
                 new = parse_csv(path)
             games.extend(new)
