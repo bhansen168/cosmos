@@ -1,9 +1,4 @@
-"""
-GUI for the game
-"""
-
-
-import os,warnings,sys,threading,asyncio
+import os,warnings,sys,threading
 warnings.filterwarnings("ignore")
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
@@ -146,16 +141,6 @@ class Main:
         self.game = Game(self.side)#never make save=True because then saves empty list
         self.activePlayerIndex = 0
 
-        '''
-        if self.mode in Main.AI_MODES:
-            ai_name, ai_class = Main.AI_MODES[self.mode]
-            self.computer = ai_class(self.game, self.compColor)
-            self.computer_name = ai_name
-            print(f"Switched to {self.mode}: {self.computer.name if hasattr(self.computer, 'name') else self.computer.__class__.__name__}")
-        else:
-            self.computer = None
-            print(f"Switched to {self.mode} mode (human vs human)")
-        '''
         self.close_timeout = None
         self.screen = "home"
         self.computer = None
@@ -360,19 +345,13 @@ class Main:
                             idx = modes.index(self.mode) if self.mode in modes else 0
                             self.mode = modes[(idx + 1) % len(modes)]
                             self.switch_comp()
-                            #self.reset()
-                            #mode_switched = True
-                            #break
+                            
                         elif event.key == pygame.K_LEFT:
                             modes = list(Main.AI_MODES.keys()) + ["player"]
                             idx = modes.index(self.mode) if self.mode in modes else 0
                             self.mode = modes[(idx - 1) % len(modes)]
                             self.switch_comp()
-                            #self.reset()
-                            #mode_switched = True
-                            #break
-                            
-                        
+                           
                         elif event.key == pygame.K_RETURN: #begin game
                             self.begin_game()
                         elif event.key == pygame.K_c:
@@ -412,11 +391,6 @@ class Main:
                                 elif key == "color":
                                     self.compColor = (Game.BLACK if self.compColor == Game.WHITE else Game.WHITE)
             
-            #if mode_switched:
-            #    continue
-
-                    
-
                             
             
             screen.fill(Main.WHITE)
@@ -447,24 +421,13 @@ class Main:
         pygame.quit()
 
         
-#if __name__ == "__main__":
-def main():
-    GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player
+if __name__ == "__main__":
+
+    GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player -- default
 
     AI_COLOR = ""#"B" #choices: "B","W",[anything else]
-    """
-    if GAME_MODE != "player" and AI_COLOR not in ["B","W"]:
-        while True:
-            try:
-                col = int(input("Type 1 to play as Black, or 2 to play as White: "))
-                if col == 1 or col == 2:
-                    AI_COLOR = ("B" if col == 2 else "W")
-                    break
-            except ValueError:
-                print("Please try again!")
-    """
+    
     m = Main(mode=GAME_MODE,compColor = AI_COLOR)
     m.main()
 
-asyncio.run(main())
 
