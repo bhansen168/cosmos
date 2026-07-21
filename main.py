@@ -13,7 +13,7 @@ from datetime import datetime,timedelta
 
 sys.path.append(os.getcwd())
 from game import Game
-from computer import ComputerDQN,ComputerSupervised as SupervisedComputer,ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer
+from computer import ComputerDQN,ComputerDQNMinimax,ComputerSupervised as SupervisedComputer,ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer
 import importlib
 computer2_module = importlib.import_module("computer2-PHASEOUT")
 GeneticComputer5 = computer2_module.Computer6
@@ -33,22 +33,14 @@ class Main:
     DARK_GREEN = (0,100,0)
     
     AI_MODES = {
-<<<<<<< HEAD
-        "dqn": ("DQN", ComputerDQN),
-        "genetic": ("Genetic", GeneticComputer),
-        "genetic_25": ("Genetic-25", GeneticComputer25),
-        "genetic_d5": ("Genetic-D5", GeneticComputer5),
-        "genetic_25_d5": ("Genetic-25-D5", GeneticComputer25_5),
-        "supervised": ("Supervised", SupervisedComputer),
-        "minimax-2": ("Minimax-2", lambda g, c: create_minimax_computer(g, c, depth=2)),
-        "minimax-4": ("Minimax-4", lambda g, c: create_minimax_computer(g, c, depth=4)),
-    }
-
-    TESTING_ML = True
-=======
-        "dqn": ("Hamlet (DQN)", ComputerDQN),
+        "dqn-1k": ("Hamlet (DQN, 1.0k)", lambda g, c: ComputerDQN(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_1.0k-sav.pth")),
+        "dqn-mm-1k": ("Hamlet (DQN-MM-2, 1.0k)", lambda g, c: ComputerDQNMinimax(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_1.0k-sav.pth", depth=2)),
+        "dqn-9k": ("Hamlet (DQN, 9.0k)", lambda g, c: ComputerDQN(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_9.0k-sav.pth")),
+        "dqn-mm-9k": ("Hamlet (DQN-MM-2, 9.0k)", lambda g, c: ComputerDQNMinimax(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_9.0k-sav.pth", depth=2)),
         "genetic": ("Prospero (Gen-50)", GeneticComputer),
         "genetic_25": ("Ariel (Gen-25)", GeneticComputer25),
+        "genetic_d5": ("Prospero (Gen-50-D5)", GeneticComputer5),
+        "genetic_25_d5": ("Ariel (Gen-25-D5)", GeneticComputer25_5),
         "supervised": ("Horatio (SL)", SupervisedComputer),
         "minimax-2": ("Hotspur (MM-2)", lambda g, c: create_minimax_computer(g, c, depth=2)),
         "minimax-4": ("Iago (MM-4)", lambda g, c: create_minimax_computer(g, c, depth=4)),
@@ -56,7 +48,6 @@ class Main:
 
     TESTING_ML = False
     FPS = 60
->>>>>>> e6b4aa71ea0977f850cbad6bf354c167da94ebd2
     
     def __init__(self,side=8,mode = "dqn",compColor = "W"):
         #mode is computer: pvcom
@@ -83,6 +74,7 @@ class Main:
         self.pickColor = (compColor not in ["W","B"])
 
         self.showLegal = False
+        self.showEval = True
         self.printed = False
         self.clickDict = {}
 
@@ -203,6 +195,33 @@ class Main:
 
         return out
 
+    def _draw_toggle_custom(self, screen, cx, y, label, state):
+        """Draw a toggle centered at cx,y with a label. Returns the clickable rect."""
+        RADIUS = 15
+        text_surf = self.font.render(label, True, Main.WHITE)
+        text_rect = text_surf.get_rect()
+        text_rect.centerx = cx
+        text_rect.centery = y
+        screen.blit(text_surf, text_rect)
+
+        if not state:
+            color1 = Main.PALE_RED
+            color2 = Main.LIGHT_RED
+            xMod = 0
+        else:
+            color1 = Main.LIGHT_GREEN
+            color2 = Main.LIME
+            xMod = 40
+
+        toggle = pygame.Rect(text_rect.right + 15, y - RADIUS, 60, RADIUS*2)
+        pygame.draw.rect(screen, color1, toggle, 0, RADIUS*2)
+        pygame.draw.circle(screen, color2, (text_rect.right + 25 + xMod, y), RADIUS)
+
+        out = pygame.Rect(text_rect.x, min(text_rect.y, toggle.y),
+                          (toggle.right - text_rect.x),
+                          max(text_rect.bottom, toggle.bottom) - min(text_rect.y, toggle.y))
+        return out
+
     def draw_legal(self,screen):
         TX,TY = Game.TOP_LEFT
         legal = self.game.get_all_legal_moves(self.activePlayerIndex+1)
@@ -217,7 +236,7 @@ class Main:
         return (self.computer is not None and self.activePlayerIndex+1 == self.computer.color)
 
     def draw_ai_val(self,screen):
-        if self.computer_active() and hasattr(self.computer, 'get_value_prediction') and Main.TESTING_ML:
+        if self.computer_active() and hasattr(self.computer, 'get_value_prediction') and self.showEval:
             try:
                 value = self.computer.get_value_prediction()
                 val_text = f"{value:+.3f}"
@@ -257,7 +276,10 @@ class Main:
             pygame.draw.circle(screen,(Main.WHITE if self.compColor == Game.WHITE else Main.BLACK),box.center,25)
             screen.blit(text3,rect)
             self.clickDict["color"] = box
-            
+
+        # Eval toggle
+        toggle_rect = self._draw_toggle_custom(screen, self.width/2, self.height - 40, "Show position evaluation", self.showEval)
+        self.clickDict["eval_toggle"] = toggle_rect
 
 
         
@@ -400,6 +422,8 @@ class Main:
                                     self.begin_game()
                                 elif key == "color":
                                     self.compColor = (Game.BLACK if self.compColor == Game.WHITE else Game.WHITE)
+                                elif key == "eval_toggle":
+                                    self.showEval = not self.showEval
             
             #if mode_switched:
             #    continue

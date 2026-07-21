@@ -28,9 +28,11 @@ from typing import Sequence
 from computer import Computer as GreedyPlayer
 from computer import RandomComputer as RandomPlayer
 from genetic_model import GeneticPlayer
-from minimax_model import DEFAULT_MINIMAX_DEPTH, MinimaxPlayer
+from minimax_model import DEFAULT_MINIMAX_DEPTH, MinimaxPlayer, POSITION_WEIGHTS
 from othello_engine import (
     BLACK,
+    BOARD_SIZE,
+    EMPTY,
     WHITE,
     HeadlessOthello,
     LegalMove,
@@ -102,6 +104,166 @@ class DQNPlayer:
         )
         y,x = self._index_to_coord(action)
         return x,y
+
+
+class DQNMinimaxPlayer:
+    """Minimax player that uses a DQN as the leaf-node evaluator."""
+
+    WIN_SCORE = 1.0
+
+    def __init__(self, checkpoint: Path, search_depth: int = 2) -> None:
+        try:
+            from computerRL import (
+                encode_state,
+                legal_moves_to_np_arr,
+                load_agent,
+            )
+        except ImportError as exc:
+            raise RuntimeError(
+                "DQN checkpoints require PyTorch. Run the benchmark with the "
+                "same Python environment used to run or train COSMOS."
+            ) from exc
+
+        self.checkpoint = checkpoint.resolve()
+        self.agent = load_agent(self.checkpoint)
+        self._encode_state = encode_state
+        self._legal_moves_to_np_arr = legal_moves_to_np_arr
+        self.search_depth = search_depth
+        hidden_size = self.agent.policyNet.layer1.out_features
+        self.name = f"DQN-Minimax ({checkpoint.name}, depth {search_depth}, {hidden_size} hidden)"
+
+    def evaluate(self, game: HeadlessOthello, color: int) -> float:
+        legal = game.get_all_legal_moves(color)
+        if not legal:
+            other = opponent(color)
+            other_moves = game.get_all_legal_moves(other)
+            if not other_moves:
+                scores = game.get_score()
+                diff = scores[color] - scores[other]
+                if diff > 0:
+                    return self.WIN_SCORE + diff
+                if diff < 0:
+                    return -self.WIN_SCORE + diff
+                return 0.0
+            return -self.evaluate(game, other)
+        return self.agent.get_value_prediction(
+            self._encode_state(game.board, color),
+            self._legal_moves_to_np_arr(legal, self.agent.actionDim),
+        )
+
+    @staticmethod
+    def _ordered_moves(legal_moves: Sequence[LegalMove]) -> list[LegalMove]:
+        return sorted(
+            legal_moves,
+            key=lambda move: (
+                POSITION_WEIGHTS[move.y][move.x],
+                len(move.flips),
+                -move.y,
+                -move.x,
+            ),
+            reverse=True,
+        )
+
+    def _alpha_beta(
+        self,
+        game: HeadlessOthello,
+        color: int,
+        depth: int,
+        alpha: float,
+        beta: float,
+        root_color: int,
+    ) -> float:
+        legal_moves = game.legal_moves(color)
+        other_color = opponent(color)
+
+        if not legal_moves:
+            if not game.legal_moves(other_color):
+                scores = game.score()
+                diff = scores[root_color] - scores[opponent(root_color)]
+                if diff > 0:
+                    return self.WIN_SCORE + diff
+                if diff < 0:
+                    return -self.WIN_SCORE + diff
+                return 0.0
+            if depth <= 0:
+                # Pass at leaf: evaluate from the side that CAN move
+                # (other_color) so the DQN gets valid legal moves.
+                val = self.evaluate(game, other_color)
+                return val if other_color == root_color else -val
+            return self._alpha_beta(
+                game, other_color, depth, alpha, beta, root_color,
+            )
+
+        if depth <= 0:
+            val = self.evaluate(game, color)
+            return val if color == root_color else -val
+
+        if color == root_color:
+            value = float("-inf")
+            for move in self._ordered_moves(legal_moves):
+                game.play(color, move)
+                try:
+                    child = self._alpha_beta(
+                        game, other_color, depth - 1, alpha, beta, root_color,
+                    )
+                finally:
+                    game.undo(color, move)
+                value = max(value, child)
+                alpha = max(alpha, value)
+                if alpha >= beta:
+                    break
+            return value
+
+        value = float("inf")
+        for move in self._ordered_moves(legal_moves):
+            game.play(color, move)
+            try:
+                child = self._alpha_beta(
+                    game, other_color, depth - 1, alpha, beta, root_color,
+                )
+            finally:
+                game.undo(color, move)
+            value = min(value, child)
+            beta = min(beta, value)
+            if alpha >= beta:
+                break
+        return value
+
+    def choose_move(
+        self,
+        game: HeadlessOthello,
+        color: int,
+        legal_moves: Sequence[LegalMove],
+        rng: random.Random,
+    ) -> tuple[int, int]:
+        best_value = float("-inf")
+        best_moves: list[LegalMove] = []
+        alpha = float("-inf")
+        remaining_depth = self.search_depth - 1
+
+        for move in self._ordered_moves(legal_moves):
+            game.play(color, move)
+            try:
+                value = self._alpha_beta(
+                    game,
+                    opponent(color),
+                    remaining_depth,
+                    alpha,
+                    float("inf"),
+                    color,
+                )
+            finally:
+                game.undo(color, move)
+
+            if value > best_value + 1e-12:
+                best_value = value
+                best_moves = [move]
+            elif abs(value - best_value) <= 1e-12:
+                best_moves.append(move)
+            alpha = max(alpha, best_value)
+
+        selected = rng.choice(best_moves)
+        return selected.x, selected.y
 
 
 @dataclass(frozen=True)
@@ -181,6 +343,16 @@ def discover_models() -> list[ModelOption]:
             relative = checkpoint.relative_to(PROJECT_ROOT)
             options.append(ModelOption(str(relative), f"DQN: {relative}"))
 
+    DEFAULT_DQN_MINIMAX = "models/othello_v02_1.0k-sav.pth"
+    options.append(
+        ModelOption(f"dqn-minimax:{DEFAULT_DQN_MINIMAX}:2", f"DQN-Minimax depth-2: {DEFAULT_DQN_MINIMAX}")
+    )
+    options.append(
+        ModelOption(f"dqn-minimax:{DEFAULT_DQN_MINIMAX}:5", f"DQN-Minimax depth-5: {DEFAULT_DQN_MINIMAX}")
+    )
+
+
+
     if GENETIC_MODELS_DIRECTORY.exists():
         for checkpoint in sorted(
             GENETIC_MODELS_DIRECTORY.rglob("genetic_gen_*.json")
@@ -188,6 +360,9 @@ def discover_models() -> list[ModelOption]:
             relative = checkpoint.relative_to(PROJECT_ROOT)
             options.append(
                 ModelOption(f"genetic:{relative}", f"Genetic: {relative}")
+            )
+            options.append(
+                ModelOption(f"genetic:{relative}:5", f"Genetic depth-5: {relative}")
             )
 
     return options
@@ -248,6 +423,12 @@ def normalize_genetic_checkpoint(raw_spec: str) -> Path:
     else:
         spec = raw_spec
 
+    # Strip optional :depth suffix (e.g. "models/path.json:5" -> "models/path.json")
+    # Only strip if the suffix looks like an integer depth
+    parts = spec.rsplit(":", 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        spec = parts[0]
+
     checkpoint = Path(spec).expanduser()
     if not checkpoint.is_absolute():
         checkpoint = PROJECT_ROOT / checkpoint
@@ -256,6 +437,18 @@ def normalize_genetic_checkpoint(raw_spec: str) -> Path:
     if checkpoint.suffix.lower() != ".json":
         raise ValueError(f"Genetic checkpoint must be a .json file: {checkpoint}")
     return checkpoint
+
+
+def parse_genetic_depth(raw_spec: str) -> int | None:
+    """Parse optional :N depth suffix from a genetic spec. Returns None if absent."""
+    lowered = raw_spec.lower()
+    for prefix in ("genetic:", "ga:"):
+        if lowered.startswith(prefix):
+            suffix = lowered[len(prefix):]
+            parts = suffix.rsplit(":", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                return int(parts[1])
+    return None
 
 
 def normalize_bard_checkpoint(raw_spec: str) -> Path:
@@ -298,7 +491,7 @@ def build_player(spec: str) -> Player:
         or normalized.endswith(".bard")
     ):
         try:
-            from computer2 import Computer3
+            from computer import Computer3
         except ImportError as exc:
             raise RuntimeError(
                 "Bard checkpoints require NumPy and XGBoost. Run the benchmark "
@@ -310,7 +503,24 @@ def build_player(spec: str) -> Player:
         or normalized.startswith("ga:")
         or normalized.endswith(".json")
     ):
-        return GeneticPlayer.from_checkpoint(normalize_genetic_checkpoint(stripped))
+        return GeneticPlayer.from_checkpoint(
+            normalize_genetic_checkpoint(stripped),
+            search_depth=parse_genetic_depth(stripped),
+        )
+    if normalized.startswith("dqn-minimax:"):
+        rest = stripped[len("dqn-minimax:"):]
+        # Only split on trailing :N if N looks like a depth integer
+        parts = rest.rsplit(":", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            dqn_path, raw_depth = parts
+        else:
+            dqn_path = rest
+            raw_depth = "2"
+        try:
+            depth = int(raw_depth)
+        except ValueError:
+            depth = 2
+        return DQNMinimaxPlayer(normalize_checkpoint(f"dqn:{dqn_path}"), search_depth=depth)
     return DQNPlayer(normalize_checkpoint(stripped))
 
 

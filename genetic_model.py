@@ -350,16 +350,17 @@ class GeneticPlayer:
         self.name = name
 
     @classmethod
-    def from_checkpoint(cls, path: str | Path) -> GeneticPlayer:
+    def from_checkpoint(cls, path: str | Path, search_depth: int | None = None) -> GeneticPlayer:
         checkpoint_path = Path(path).expanduser().resolve()
         payload = load_checkpoint(checkpoint_path)
         champion = payload.get("champion") or payload.get("generation_best")
         if not champion:
             champion = payload["best_ever"]
         generation = int(payload["generation"])
-        search_depth = int(
-            payload.get("config", {}).get("search_depth", DEFAULT_SEARCH_DEPTH)
-        )
+        if search_depth is None:
+            search_depth = int(
+                payload.get("config", {}).get("search_depth", DEFAULT_SEARCH_DEPTH)
+            )
         endgame_exact_empties = int(
             payload.get("config", {}).get(
                 "endgame_exact_empties",

@@ -28,8 +28,7 @@ from benchmark_models import (  # noqa: E402
     opponent,
     run_match,
 )
-from computer import Computer, RandomComputer, create_minimax_computer  # noqa: E402
-from computer2 import Computer3  # noqa: E402
+from computer import Computer, Computer3, RandomComputer, create_minimax_computer  # noqa: E402
 from genetic_model import (  # noqa: E402
     CHECKPOINT_FORMAT,
     CHECKPOINT_VERSION,
@@ -154,7 +153,7 @@ class MatchTests(unittest.TestCase):
             checkpoint = Path(temporary_directory) / "test.bard"
             checkpoint.write_bytes(b"test checkpoint")
             with mock.patch(
-                "computer2.load_agent_sup",
+                "computer.load_agent_sup",
                 return_value=FakeBardAgent(),
             ):
                 player = build_player(f"bard:{checkpoint}")

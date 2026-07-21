@@ -138,7 +138,7 @@ def create_genetic_computer(game,color,checkpoint_path, search_depth=None):
 
 class ComputerDQN(Computer): #incorporates AI model -- use PTH extension
     #formerly known as Computer2
-    PATH = os.getcwd()+"/models/checkpoints/othello_v02_2.0k-sav.pth"
+    PATH = os.getcwd()+"/models/othello_v02_1.0k-sav.pth"
     def __init__(self,game,color,path=None):
         super().__init__(game,color)
         from computerRL import load_agent
@@ -163,6 +163,37 @@ class ComputerDQN(Computer): #incorporates AI model -- use PTH extension
         state = encode_state(self.game.board, self.color)
         legal_moves = legal_moves_to_np_arr(self.game.get_all_legal_moves(self.color), self.agent.actionDim)
         return self.agent.get_value_prediction(state, legal_moves)
+
+
+class ComputerDQNMinimax(Computer):
+    """DQN agent that selects moves via alpha-beta minimax, using the DQN as the
+    leaf-node evaluator. Defaults to the v02_1.0k-sav checkpoint."""
+    PATH = os.getcwd()+"/models/othello_v02_1.0k-sav.pth"
+    def __init__(self, game, color, path=None, depth=2):
+        super().__init__(game, color)
+        from computerRL import load_agent, dqn_minimax_select_action, index_to_coord
+        if path is None:
+            path = ComputerDQNMinimax.PATH
+        self.agent = load_agent(path)
+        self.depth = depth
+        self._select = dqn_minimax_select_action
+        self._index_to_coord = index_to_coord
+        self.name = f"Hamlet (DQN-MM-{depth})"
+
+    def pick(self):
+        ind = self._select(self.agent, self.game, self.color, depth=self.depth)
+        if ind is None:
+            return
+        y, x = self._index_to_coord(ind)
+        self.game.place_piece(self.color, x, y)
+
+    def get_value_prediction(self):
+        from computerRL import encode_state,legal_moves_to_np_arr
+
+        state = encode_state(self.game.board, self.color)
+        legal_moves = legal_moves_to_np_arr(self.game.get_all_legal_moves(self.color), self.agent.actionDim)
+        return self.agent.get_value_prediction(state, legal_moves)
+
 
 class ComputerSupervised(Computer):
     #formerly known as Computer2
@@ -228,13 +259,13 @@ class ComputerGen25(Computer): # Genetic algorithm model - 25th generation
             path = ComputerGen25.PATH
         self.path = os.path.abspath(path)
         self.computer = create_genetic_computer(game, color, self.path)
-        self.name = f"Genetic 25th Gen ({os.path.basename(self.path)})"
+        self.name = f"Genetic ({os.path.basename(self.path)})"
 
     def pick(self):
         self.computer.pick()
 
-    def get_value_prediction(self):
-        """Return the genetic model's estimated value for the current position."""
-        return self.computer.get_value_prediction()
+
+# Backward compat alias – Computer3 (from the old computer2 module) === ComputerSupervised
+Computer3 = ComputerSupervised
 
 

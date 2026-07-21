@@ -10,7 +10,7 @@ from computer import create_genetic_computer
 
 
 class Computer2(Computer): #incorporates AI model -- use PTH extension
-    PATH = os.getcwd()+"/models/checkpoints/othello_v02_1.0k-sav.pth"
+    PATH = os.getcwd()+"/models/othello_v02_1.0k-sav.pth"
     name = "DQN"
     def __init__(self,game,color):
         super().__init__(game,color)
