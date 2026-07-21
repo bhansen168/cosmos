@@ -331,7 +331,7 @@ class Main:
             self.computer.cooldown = datetime.now()
 
 
-    def main(self):
+    async def main(self):
         screen = pygame.display.set_mode((self.width,self.height))
 
         icon_image = pygame.image.load('logo.png')  # Relative path to your 32x32 image
@@ -436,11 +436,12 @@ class Main:
 
             self.clock.tick(Main.FPS)
 
+            await asyncio.sleep(0) 
+
         pygame.quit()
 
         
-#if __name__ == "__main__":
-async def main():
+if __name__ == "__main__":
     GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player
 
     AI_COLOR = ""#"B" #choices: "B","W",[anything else]
@@ -456,7 +457,6 @@ async def main():
                 print("Please try again!")
     """
     m = Main(mode=GAME_MODE,compColor = AI_COLOR)
-    m.main()
+    asyncio.run(m.main())
 
-asyncio.run(main())
 
