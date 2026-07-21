@@ -35,15 +35,6 @@ class Main:
     AI_MODES = {
         "dqn": ("Hamlet (DQN)", ComputerDQN),
         "ppo": ("Macbeth (PPO-2)", ComputerPPO),
-        "ppo-raw": (
-            "Banquo (PPO-Raw)",
-            lambda g, c: ComputerPPO(
-                g,
-                c,
-                search_depth=0,
-                endgame_exact_empties=0,
-            ),
-        ),
         "genetic": ("Prospero (G50-2)", [GeneticComputer,None,None]),#create_genetic_comp(pathBase = GEN_PATHBASE)),#GeneticComputer),
         "genetic_25": ("Ariel (G25-2)", [GeneticComputer,25,None]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25)),#GeneticComputer25),
         "genetic_d5": ("Caliban (G50-5)", [GeneticComputer,None,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,depth=5)),#GeneticComputer5),
@@ -439,7 +430,7 @@ class Main:
         
 if __name__ == "__main__":
 
-    # Options include ppo, ppo-raw, dqn, genetic, supervised, minimax, and player.
+    # Options include ppo, dqn, genetic, supervised, minimax, and player.
     GAME_MODE = "genetic"
 
     AI_COLOR = ""#"B" #choices: "B","W",[anything else]
