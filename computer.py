@@ -1,4 +1,5 @@
 import os,sys,random
+from pathlib import Path
 sys.path.append(os.getcwd())
 from computer_supervised import (
     coord_to_index as coord_to_index_sup,
@@ -7,6 +8,38 @@ from computer_supervised import (
 )
 
 from datetime import datetime
+
+
+def find_latest_ppo_checkpoint(models_directory=None):
+    """Find a PPO checkpoint in the current or legacy models layout."""
+    if models_directory is None:
+        models_directory = Path(__file__).resolve().parent / "models"
+    models_directory = Path(models_directory)
+    search_directories = (models_directory / "ppo", models_directory)
+    preferred = [
+        checkpoint
+        for directory in search_directories
+        for checkpoint in directory.glob("latest*.ppo")
+        if checkpoint.is_file()
+    ]
+    candidates = preferred or [
+        checkpoint
+        for directory in search_directories
+        for checkpoint in directory.glob("*.ppo")
+        if checkpoint.is_file()
+    ]
+    if not candidates:
+        raise FileNotFoundError(
+            f"No PPO checkpoints found under {models_directory.resolve()}"
+        )
+
+    def freshness(checkpoint):
+        try:
+            return checkpoint.stat().st_mtime_ns, checkpoint.name.casefold()
+        except OSError:
+            return -1, checkpoint.name.casefold()
+
+    return max(candidates, key=freshness).resolve()
 
 
 class Computer: 
@@ -114,9 +147,7 @@ class ModelComputer(Computer):
             # Genetic player uses evaluate(game, color)
             return self.player.evaluate(self.game, self.color)
         elif hasattr(self.player, 'get_value_prediction'):
-            # DQN agent has get_value_prediction(state, legal_moves)
-            # This is for the agent case, not used via ModelComputer
-            pass
+            return self.player.get_value_prediction(self.game, self.color)
         return 0.0
 
 
@@ -163,6 +194,60 @@ class ComputerDQN(Computer): #incorporates AI model -- use PTH extension
         state = encode_state(self.game.board, self.color)
         legal_moves = legal_moves_to_np_arr(self.game.get_all_legal_moves(self.color), self.agent.actionDim)
         return self.agent.get_value_prediction(state, legal_moves)
+
+
+class ComputerPPO(ModelComputer):
+    """Original bound-Computer adapter for a searched PPO checkpoint."""
+
+    def __init__(
+        self,
+        game=None,
+        color=None,
+        path=None,
+        device="auto",
+        search_depth=2,
+        endgame_exact_empties=8,
+        symmetry_ensemble=False,
+    ):
+        if path is None:
+            path = find_latest_ppo_checkpoint()
+        self.path = Path(path).resolve()
+        if not self.path.is_file():
+            raise FileNotFoundError(f"PPO checkpoint does not exist: {self.path}")
+
+        # Keep importing computer.py cheap for non-PPO modes and environments
+        # that do not have PyTorch installed.
+        from ppo_model import PPOPlayer
+
+        player = PPOPlayer(
+            self.path,
+            device=device,
+            search_depth=search_depth,
+            endgame_exact_empties=endgame_exact_empties,
+            symmetry_ensemble=symmetry_ensemble,
+        )
+        super().__init__(game,color,player)
+
+
+def create_ppo_computer(
+    game,
+    color,
+    checkpoint_path=None,
+    device="auto",
+    search_depth=2,
+    endgame_exact_empties=8,
+    symmetry_ensemble=False,
+):
+    return ComputerPPO(
+        game,
+        color,
+        path=checkpoint_path,
+        device=device,
+        search_depth=search_depth,
+        endgame_exact_empties=endgame_exact_empties,
+        symmetry_ensemble=symmetry_ensemble,
+    )
+
 
 class ComputerSupervised(Computer):
     #formerly known as Computer3

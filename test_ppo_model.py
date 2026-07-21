@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import math
+import os
 import random
 import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import torch
 
 from benchmark_models import build_player
+from computer import ComputerPPO, create_ppo_computer, find_latest_ppo_checkpoint
 from game import Game
 from ppo_model import (
     ACTION_DIM,
@@ -20,6 +23,8 @@ from ppo_model import (
     ModelConfig,
     PPOActorCritic,
     PPOPlayer,
+    SearchConfig,
+    choose_search_move,
     encode_state,
     inverse_transform_action,
     legal_moves_mask,
@@ -30,7 +35,9 @@ from ppo_model import (
     transform_planes,
 )
 from train_ppo import (
+    Experience,
     TrainingConfig,
+    _finish_trajectory,
     collect_rollout,
     train,
     update_policy,
@@ -114,6 +121,7 @@ class NetworkAndCheckpointTests(unittest.TestCase):
             player = build_player(f"ppo:{checkpoint}")
             self.assertIsInstance(player, PPOPlayer)
             game = Game()
+            original_board = [row.copy() for row in game.board]
             legal_moves = game.legal_moves(Game.BLACK)
             coordinate = player.choose_move(
                 game,
@@ -125,8 +133,105 @@ class NetworkAndCheckpointTests(unittest.TestCase):
                 coordinate,
                 {(move.x, move.y) for move in legal_moves},
             )
+            self.assertEqual(game.board, original_board)
             self.assertGreaterEqual(player.get_value_prediction(game, Game.BLACK), -1)
             self.assertLessEqual(player.get_value_prediction(game, Game.BLACK), 1)
+
+            raw_player = build_player(f"ppo-raw:{checkpoint}")
+            self.assertEqual(raw_player.search.depth, 0)
+            self.assertEqual(raw_player.search.endgame_exact_empties, 0)
+
+    def test_bound_computer_adapter_and_checkpoint_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            legacy = root / "latest.ppo"
+            current = root / "ppo" / "latest.ppo"
+            current.parent.mkdir()
+            save_checkpoint(legacy, self.model)
+            save_checkpoint(current, self.model)
+            os.utime(legacy, (1, 1))
+            os.utime(current, (2, 2))
+            self.assertEqual(find_latest_ppo_checkpoint(root), current.resolve())
+
+            game = Game()
+            original_board = [row.copy() for row in game.board]
+            computer = ComputerPPO(
+                game,
+                Game.BLACK,
+                path=current,
+                device="cpu",
+                search_depth=0,
+                endgame_exact_empties=0,
+            )
+            coordinate = computer.pick_model(place=False)
+            self.assertIn(coordinate, game.get_all_legal_moves(Game.BLACK))
+            self.assertEqual(game.board, original_board)
+            self.assertGreaterEqual(computer.get_value_prediction(), -1.0)
+            self.assertLessEqual(computer.get_value_prediction(), 1.0)
+
+            factory_computer = create_ppo_computer(
+                game,
+                Game.BLACK,
+                checkpoint_path=current,
+                device="cpu",
+                search_depth=0,
+                endgame_exact_empties=0,
+            )
+            self.assertIsInstance(factory_computer, ComputerPPO)
+            factory_computer.pick()
+            self.assertEqual(game.get_score(), {Game.BLACK: 4, Game.WHITE: 1})
+
+    def test_policy_guided_search_preserves_board(self) -> None:
+        game = Game()
+        legal_moves = game.legal_moves(Game.BLACK)
+        original_board = [row.copy() for row in game.board]
+        with mock.patch.object(
+            self.model,
+            "forward",
+            wraps=self.model.forward,
+        ) as forward:
+            coordinate = choose_search_move(
+                self.model,
+                torch.device("cpu"),
+                game,
+                Game.BLACK,
+                legal_moves,
+                SearchConfig(depth=2, endgame_exact_empties=0),
+            )
+        self.assertIn(coordinate, {(move.x, move.y) for move in legal_moves})
+        self.assertEqual(game.board, original_board)
+        self.assertEqual(forward.call_count, 2)
+
+    def test_exact_endgame_search_preserves_board(self) -> None:
+        game = Game()
+        rng = random.Random(19)
+        color = Game.BLACK
+        while sum(square == Game.EMPTY for row in game.board for square in row) > 6:
+            legal_moves = game.legal_moves(color)
+            if not legal_moves:
+                color = Game.WHITE if color == Game.BLACK else Game.BLACK
+                legal_moves = game.legal_moves(color)
+                if not legal_moves:
+                    break
+            game.play(color, rng.choice(legal_moves))
+            color = Game.WHITE if color == Game.BLACK else Game.BLACK
+
+        legal_moves = game.legal_moves(color)
+        if not legal_moves:
+            color = Game.WHITE if color == Game.BLACK else Game.BLACK
+            legal_moves = game.legal_moves(color)
+        self.assertTrue(legal_moves)
+        original_board = [row.copy() for row in game.board]
+        coordinate = choose_search_move(
+            self.model,
+            torch.device("cpu"),
+            game,
+            color,
+            legal_moves,
+            SearchConfig(depth=0, endgame_exact_empties=6),
+        )
+        self.assertIn(coordinate, {(move.x, move.y) for move in legal_moves})
+        self.assertEqual(game.board, original_board)
 
 
 class TrainerTests(unittest.TestCase):
@@ -137,19 +242,45 @@ class TrainerTests(unittest.TestCase):
             rollout_steps=8,
             ppo_epochs=1,
             minibatch_size=16,
+            parallel_games=4,
+            teacher_fraction=0.0,
             self_play_fraction=1.0,
             league_fraction=0.0,
             baseline_fraction=0.0,
             checkpoint_every=0,
             snapshot_every=0,
             validation_every=0,
+            champion_every=0,
             validation_pairs=1,
             channels=8,
             residual_blocks=1,
             seed=11,
             device="cpu",
             output_directory=output_directory,
+            genetic_checkpoint=output_directory / "missing-genetic.json",
         )
+
+    def test_value_targets_use_final_outcome_instead_of_critic_bootstrap(self) -> None:
+        config = replace(
+            self.tiny_config(Path("unused")),
+            score_target_weight=0.10,
+            gae_lambda=0.95,
+        )
+        trajectory = [
+            Experience(
+                state=np.zeros((3, 8, 8), dtype=np.float32),
+                legal_mask=np.ones(64, dtype=np.bool_),
+                action=0,
+                old_log_probability=-1.0,
+                old_value=value,
+            )
+            for value in (-0.5, 0.1, 0.7)
+        ]
+        _finish_trajectory(trajectory, outcome=1.0, score_margin=0.25, config=config)
+        expected = 0.9 + 0.1 * 0.25
+        for experience in trajectory:
+            self.assertAlmostEqual(experience.return_value, expected)
+            self.assertTrue(math.isfinite(experience.advantage))
 
     def test_rollout_and_update_are_finite(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -181,12 +312,36 @@ class TrainerTests(unittest.TestCase):
             for value in (
                 metrics.policy_loss,
                 metrics.value_loss,
+                metrics.teacher_loss,
                 metrics.entropy,
+                metrics.normalized_entropy,
                 metrics.approximate_kl,
                 metrics.clip_fraction,
                 metrics.explained_variance,
             ):
                 self.assertTrue(math.isfinite(value))
+
+    def test_parallel_rollout_batches_policy_inference(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            config = replace(
+                self.tiny_config(Path(temporary_directory)),
+                rollout_steps=180,
+                parallel_games=4,
+            )
+            model = PPOActorCritic(ModelConfig(8, 1))
+            with mock.patch.object(model, "forward", wraps=model.forward) as forward:
+                batch = collect_rollout(
+                    model,
+                    torch.device("cpu"),
+                    random.Random(config.seed),
+                    config,
+                    league=[],
+                    league_cache={},
+                )
+
+            self.assertGreaterEqual(batch.size, config.rollout_steps)
+            self.assertGreaterEqual(batch.games, 4)
+            self.assertLess(forward.call_count, batch.size / 2)
 
     def test_tiny_training_run_writes_resumable_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -221,6 +376,11 @@ class TrainerTests(unittest.TestCase):
                 checkpoint_every=1,
                 snapshot_every=1,
                 validation_every=1,
+                champion_every=1,
+                champion_pairs=1,
+                champion_search_depth=0,
+                champion_endgame_exact_empties=0,
+                champion_max_minimax_depth=2,
             )
             latest = train(config)
             best = output / "best.ppo"
@@ -229,7 +389,9 @@ class TrainerTests(unittest.TestCase):
             self.assertEqual(len(snapshots), 1)
             _, payload = load_checkpoint(latest)
             self.assertIn("validation_composite", payload["metrics"])
+            self.assertIn("champion_composite", payload["metrics"])
             self.assertEqual(len(payload["league"]), 1)
+            self.assertEqual(len(payload["hall_of_fame"]), 1)
 
             already_complete = train(replace(config, resume=latest))
             self.assertEqual(already_complete, latest.resolve())

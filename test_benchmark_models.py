@@ -15,7 +15,9 @@ from unittest import mock
 
 # game.py imports Pygame for rendering, but its rules engine does not need it.
 # A stub lets this test compare both rules engines in headless environments.
-sys.modules.setdefault("pygame", types.ModuleType("pygame"))
+pygame_stub = sys.modules.setdefault("pygame", types.ModuleType("pygame"))
+if not hasattr(pygame_stub, "init"):
+    pygame_stub.init = lambda: None
 
 from benchmark_models import (  # noqa: E402
     BLACK,
@@ -39,6 +41,7 @@ from benchmark_models import (  # noqa: E402
 )
 from computer import (  # noqa: E402
     Computer,
+    ComputerPPO,
     ComputerSupervised,
     RandomComputer,
     create_minimax_computer,
@@ -55,6 +58,7 @@ from genetic_model import (  # noqa: E402
 )
 from game import Game  # noqa: E402
 from minimax_model import MinimaxPlayer as StandaloneMinimaxPlayer  # noqa: E402
+from main import Main  # noqa: E402
 from watch_models import SpectatorMatch  # noqa: E402
 
 
@@ -131,6 +135,10 @@ class HeadlessRulesTests(unittest.TestCase):
 
 
 class MatchTests(unittest.TestCase):
+    def test_main_menu_exposes_searched_and_raw_ppo(self) -> None:
+        self.assertIs(Main.AI_MODES["ppo"][1], ComputerPPO)
+        self.assertIn("ppo-raw", Main.AI_MODES)
+
     def test_match_totals_and_color_alternation(self) -> None:
         stats, _ = run_match(
             (RandomPlayer(), GreedyPlayer()),
@@ -144,12 +152,21 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(sum(stats.wins) + stats.draws, 5)
         self.assertGreater(sum(stats.total_discs), 0)
 
-    def test_checkpoint_discovery_lists_one_latest_model_per_family(self) -> None:
+    def test_checkpoint_discovery_lists_latest_models_and_raw_ppo(self) -> None:
         options = discover_models()
         specs = [option.spec for option in options]
         self.assertEqual(
             specs,
-            ["random", "greedy", "minimax", "dqn", "bard", "genetic", "ppo"],
+            [
+                "random",
+                "greedy",
+                "minimax",
+                "dqn",
+                "bard",
+                "genetic",
+                "ppo",
+                "ppo-raw",
+            ],
         )
         for option in options[3:]:
             self.assertIn("latest:", option.label)
@@ -167,6 +184,10 @@ class MatchTests(unittest.TestCase):
             latest_genetic_checkpoint(),
         )
         self.assertEqual(normalize_ppo_checkpoint("ppo"), latest_ppo_checkpoint())
+        self.assertEqual(
+            normalize_ppo_checkpoint("ppo-raw"),
+            latest_ppo_checkpoint(),
+        )
 
     def test_latest_dqn_ignores_newer_aborted_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
