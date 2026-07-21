@@ -3,7 +3,7 @@ GUI for the game
 """
 
 
-import os,warnings,sys,threading
+import os,warnings,sys,threading,asyncio
 warnings.filterwarnings("ignore")
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
@@ -443,7 +443,8 @@ class Main:
         pygame.quit()
 
         
-if __name__ == "__main__":
+#if __name__ == "__main__":
+async def main():
     GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player
 
     AI_COLOR = ""#"B" #choices: "B","W",[anything else]
@@ -461,5 +462,5 @@ if __name__ == "__main__":
     m = Main(mode=GAME_MODE,compColor = AI_COLOR)
     m.main()
 
-
+asyncio.run(main())
 
