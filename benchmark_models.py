@@ -8,12 +8,11 @@ Run without arguments for an interactive model picker, or pass model specs:
     python benchmark_models.py --player-1 genetic --player-2 minimax --games 100
     python benchmark_models.py --player-1 bard --player-2 greedy --games 100
     python benchmark_models.py --player-1 ppo --player-2 dqn --games 100
-    python benchmark_models.py --player-1 ppo-raw --player-2 ppo --games 100
 
-The dqn, bard, genetic, ppo, and ppo-raw names resolve to the newest available
-checkpoint each time the program starts.  PPO uses policy/value-guided search;
-ppo-raw selects the same network with no search. Explicit checkpoint paths
-remain supported when a benchmark must be reproducible against an older model.
+The dqn, bard, genetic, and ppo names resolve to the newest available checkpoint
+each time the program starts. PPO uses policy/value-guided search. Explicit
+checkpoint paths remain supported when a benchmark must be reproducible against
+an older model.
 
 The program is independent of the Pygame game loop, so benchmarks can run
 without opening a window. PyTorch is imported only when a DQN or PPO model is
@@ -256,13 +255,6 @@ def discover_models() -> list[ModelOption]:
         options.append(
             ModelOption(spec, f"{label} (latest: {_relative_label(checkpoint)})")
         )
-        if spec == "ppo":
-            options.append(
-                ModelOption(
-                    "ppo-raw",
-                    f"PPO raw policy, no search (latest: {_relative_label(checkpoint)})",
-                )
-            )
 
     return options
 
@@ -330,14 +322,9 @@ def normalize_checkpoint(raw_spec: str) -> Path:
 def normalize_ppo_checkpoint(raw_spec: str) -> Path:
     stripped = raw_spec.strip()
     lowered = stripped.lower()
-    if lowered in ("ppo", "ppo-raw"):
+    if lowered == "ppo":
         return latest_ppo_checkpoint()
-    if lowered.startswith("ppo-raw:"):
-        spec = stripped[len("ppo-raw:") :]
-    elif lowered.startswith("ppo:"):
-        spec = stripped[len("ppo:") :]
-    else:
-        spec = stripped
+    spec = stripped[len("ppo:") :] if lowered.startswith("ppo:") else stripped
     return _normalize_explicit_checkpoint(spec, "PPO", ".ppo")
 
 
@@ -403,9 +390,8 @@ def build_player(spec: str) -> Player:
     ):
         return GeneticPlayer.from_checkpoint(normalize_genetic_checkpoint(stripped))
     if (
-        normalized in ("ppo", "ppo-raw")
+        normalized == "ppo"
         or normalized.startswith("ppo:")
-        or normalized.startswith("ppo-raw:")
         or normalized.endswith(".ppo")
     ):
         try:
@@ -415,12 +401,7 @@ def build_player(spec: str) -> Player:
                 "PPO checkpoints require PyTorch. Run the benchmark with the "
                 "same Python environment used to train PPO."
             ) from exc
-        raw_policy = normalized == "ppo-raw" or normalized.startswith("ppo-raw:")
-        return PPOPlayer(
-            normalize_ppo_checkpoint(stripped),
-            search_depth=0 if raw_policy else 2,
-            endgame_exact_empties=0 if raw_policy else 8,
-        )
+        return PPOPlayer(normalize_ppo_checkpoint(stripped))
     if (
         normalized == "dqn"
         or normalized.startswith("dqn:")
@@ -429,7 +410,7 @@ def build_player(spec: str) -> Player:
         return DQNPlayer(normalize_checkpoint(stripped))
     raise ValueError(
         f"Unknown model {stripped!r}; use random, greedy, minimax, dqn, bard, "
-        "genetic, ppo, ppo-raw, or an explicit checkpoint path"
+        "genetic, ppo, or an explicit checkpoint path"
     )
 
 
@@ -538,10 +519,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Use 'random', 'greedy', 'minimax', 'dqn', 'bard', 'genetic', "
-            "'ppo', or 'ppo-raw'. Learned-model names automatically use their latest "
+            "or 'ppo'. Learned-model names automatically use their latest "
             "checkpoint. Custom specs such as 'minimax:DEPTH', "
-            "'bard:PATH.bard', 'genetic:PATH.json', 'ppo:PATH.ppo', "
-            "'ppo-raw:PATH.ppo', and 'dqn:PATH.pth' are also supported.\n"
+            "'bard:PATH.bard', 'genetic:PATH.json', 'ppo:PATH.ppo', and "
+            "'dqn:PATH.pth' are also supported.\n"
             "Omit both players to use the interactive model picker."
         ),
     )

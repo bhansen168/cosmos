@@ -137,10 +137,6 @@ class NetworkAndCheckpointTests(unittest.TestCase):
             self.assertGreaterEqual(player.get_value_prediction(game, Game.BLACK), -1)
             self.assertLessEqual(player.get_value_prediction(game, Game.BLACK), 1)
 
-            raw_player = build_player(f"ppo-raw:{checkpoint}")
-            self.assertEqual(raw_player.search.depth, 0)
-            self.assertEqual(raw_player.search.endgame_exact_empties, 0)
-
     def test_bound_computer_adapter_and_checkpoint_discovery(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

@@ -135,9 +135,8 @@ class HeadlessRulesTests(unittest.TestCase):
 
 
 class MatchTests(unittest.TestCase):
-    def test_main_menu_exposes_searched_and_raw_ppo(self) -> None:
+    def test_main_menu_exposes_ppo(self) -> None:
         self.assertIs(Main.AI_MODES["ppo"][1], ComputerPPO)
-        self.assertIn("ppo-raw", Main.AI_MODES)
 
     def test_match_totals_and_color_alternation(self) -> None:
         stats, _ = run_match(
@@ -152,7 +151,7 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(sum(stats.wins) + stats.draws, 5)
         self.assertGreater(sum(stats.total_discs), 0)
 
-    def test_checkpoint_discovery_lists_latest_models_and_raw_ppo(self) -> None:
+    def test_checkpoint_discovery_lists_one_latest_model_per_family(self) -> None:
         options = discover_models()
         specs = [option.spec for option in options]
         self.assertEqual(
@@ -165,7 +164,6 @@ class MatchTests(unittest.TestCase):
                 "bard",
                 "genetic",
                 "ppo",
-                "ppo-raw",
             ],
         )
         for option in options[3:]:
@@ -184,10 +182,6 @@ class MatchTests(unittest.TestCase):
             latest_genetic_checkpoint(),
         )
         self.assertEqual(normalize_ppo_checkpoint("ppo"), latest_ppo_checkpoint())
-        self.assertEqual(
-            normalize_ppo_checkpoint("ppo-raw"),
-            latest_ppo_checkpoint(),
-        )
 
     def test_latest_dqn_ignores_newer_aborted_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

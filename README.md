@@ -13,12 +13,12 @@ python benchmark_models.py --player-1 dqn --player-2 minimax:3 --games 100
 ```
 
 The available names are `random`, `greedy`, `minimax`, `dqn`, `bard`,
-`genetic`, `ppo`, and `ppo-raw`. `ppo` combines the learned policy/value network
-with depth-2 policy-guided search and an exact eight-empty endgame search;
-`ppo-raw` measures the network without search. The interactive benchmark picker
-and the `watch_models.py` dropdown include the path currently selected as
-latest. Explicit paths such as `genetic:models/genetic/genetic_gen_0024.json`
-remain available for reproducible comparisons with older checkpoints.
+`genetic`, and `ppo`. `ppo` combines the learned policy/value network with
+depth-2 policy-guided search and an exact eight-empty endgame search. The
+interactive benchmark picker and the `watch_models.py` dropdown include the
+path currently selected as latest. Explicit paths such as
+`genetic:models/genetic/genetic_gen_0024.json` remain available for reproducible
+comparisons with older checkpoints.
 
 ## Genetic training
 
@@ -87,30 +87,22 @@ python train_ppo.py --iterations 1 --rollout-steps 128 --channels 16 `
 ```
 
 The latest PPO checkpoint is automatically represented by the searched `ppo`
-alias in `benchmark_models.py` and `watch_models.py`. Use `ppo-raw` to isolate
-network quality. Older checkpoints can still be selected explicitly:
+alias in `benchmark_models.py` and `watch_models.py`. Older checkpoints can
+still be selected explicitly:
 
 ```powershell
 python benchmark_models.py --player-1 ppo:models/ppo/best.ppo `
     --player-2 minimax:4 --games 100
-python benchmark_models.py --player-1 ppo-raw:models/ppo/best.ppo `
-    --player-2 minimax:4 --games 100
 ```
 
-The interactive game in `main.py` also exposes `ppo` and `ppo-raw` while
-cycling opponents with the left/right arrow keys. The bound-computer interface
-is available directly for other game modes:
+The interactive game in `main.py` also exposes `ppo` while cycling opponents
+with the left/right arrow keys. The bound-computer interface is available
+directly for other game modes:
 
 ```python
 from computer import ComputerPPO
 
 computer = ComputerPPO(game, color)  # latest checkpoint, search depth 2
-raw_computer = ComputerPPO(
-    game,
-    color,
-    search_depth=0,
-    endgame_exact_empties=0,
-)
 ```
 
 `computer.py` imports PyTorch only when a PPO computer is constructed.
