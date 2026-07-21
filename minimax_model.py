@@ -14,7 +14,7 @@ from othello_engine import (
 )
 
 
-DEFAULT_MINIMAX_DEPTH = 2  # Kept low enough for large benchmark batches.
+DEFAULT_MINIMAX_DEPTH = 4
 
 # Corners are highly valuable. Squares beside an unclaimed corner are risky.
 POSITION_WEIGHTS = (

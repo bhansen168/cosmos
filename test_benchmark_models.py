@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import sys
 import tempfile
@@ -25,11 +26,23 @@ from benchmark_models import (  # noqa: E402
     RandomPlayer,
     build_player,
     discover_models,
+    latest_bard_checkpoint,
+    latest_dqn_checkpoint,
+    latest_genetic_checkpoint,
+    latest_ppo_checkpoint,
+    normalize_bard_checkpoint,
+    normalize_checkpoint,
+    normalize_genetic_checkpoint,
+    normalize_ppo_checkpoint,
     opponent,
     run_match,
 )
-from computer import Computer, RandomComputer, create_minimax_computer  # noqa: E402
-from computer2 import Computer3  # noqa: E402
+from computer import (  # noqa: E402
+    Computer,
+    ComputerSupervised,
+    RandomComputer,
+    create_minimax_computer,
+)
 from genetic_model import (  # noqa: E402
     CHECKPOINT_FORMAT,
     CHECKPOINT_VERSION,
@@ -131,16 +144,44 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(sum(stats.wins) + stats.draws, 5)
         self.assertGreater(sum(stats.total_discs), 0)
 
-    def test_checkpoint_discovery_includes_builtin_and_dqn_models(self) -> None:
+    def test_checkpoint_discovery_lists_one_latest_model_per_family(self) -> None:
         options = discover_models()
         specs = [option.spec for option in options]
         self.assertEqual(
-            specs[:6],
-            ["random", "greedy", "minimax:1", "minimax", "minimax:3", "minimax:4"],
+            specs,
+            ["random", "greedy", "minimax", "dqn", "bard", "genetic", "ppo"],
         )
-        self.assertIn("bard", specs)
-        self.assertTrue(any(spec.startswith("bard:") for spec in specs))
-        self.assertTrue(any(spec.lower().endswith(".pth") for spec in specs[6:]))
+        for option in options[3:]:
+            self.assertIn("latest:", option.label)
+
+    def test_learned_model_aliases_resolve_latest_checkpoints(self) -> None:
+        dqn = normalize_checkpoint("dqn")
+        self.assertEqual(dqn.suffix, ".pth")
+        self.assertNotIn("aborted", dqn.name.casefold())
+        self.assertEqual(
+            normalize_bard_checkpoint("bard"),
+            latest_bard_checkpoint(),
+        )
+        self.assertEqual(
+            normalize_genetic_checkpoint("genetic"),
+            latest_genetic_checkpoint(),
+        )
+        self.assertEqual(normalize_ppo_checkpoint("ppo"), latest_ppo_checkpoint())
+
+    def test_latest_dqn_ignores_newer_aborted_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            model_directory = Path(temporary_directory)
+            older = model_directory / "dqn_10k.pth"
+            newer = model_directory / "dqn_20k.pth"
+            aborted = model_directory / "dqn_30k_ABORTED.pth"
+            for checkpoint in (older, newer, aborted):
+                checkpoint.write_bytes(b"checkpoint")
+            os.utime(older, (1, 1))
+            os.utime(newer, (2, 2))
+            os.utime(aborted, (3, 3))
+
+            with mock.patch("benchmark_models.MODELS_DIRECTORY", model_directory):
+                self.assertEqual(latest_dqn_checkpoint(), newer)
 
     def test_bard_adapter_selects_a_legal_move(self) -> None:
         class FakeBardAgent:
@@ -154,12 +195,12 @@ class MatchTests(unittest.TestCase):
             checkpoint = Path(temporary_directory) / "test.bard"
             checkpoint.write_bytes(b"test checkpoint")
             with mock.patch(
-                "computer2.load_agent_sup",
+                "computer.load_agent_sup",
                 return_value=FakeBardAgent(),
             ):
                 player = build_player(f"bard:{checkpoint}")
 
-            self.assertIsInstance(player, Computer3)
+            self.assertIsInstance(player, ComputerSupervised)
             game = Game()
             legal_moves = game.legal_moves(BLACK)
             selected = player.choose_move(
