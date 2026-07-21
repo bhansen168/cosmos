@@ -196,8 +196,8 @@ class ComputerDQNMinimax(Computer):
 
 
 class ComputerSupervised(Computer):
-    #formerly known as Computer2
-    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","supervised","wthor-kaggle.bard")
+    #formerly known as Computer3
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","synth-20260720133316.bard")
     #dataset sourced from Kaggle (CSV) and WTHOR (French Othello Federation)
     def __init__(self,game=None,color=None,path=None):
         super().__init__(game,color)
@@ -231,8 +231,37 @@ class ComputerSupervised(Computer):
         x,y = self.choose_move(self.game,self.color,legal,None)
         self.game.place_piece(self.color,x,y)
 
+class GeneticComputer(Computer):
+    
+    def __init__(self,PATH_BASE,game=None,color=None,gen=None,depth=None,GLATEST_PATH = "latest_v2.json",G25_PATH = "genetic_gen_0024_v2.json"):
+        super().__init__(game,color)
+
+        if gen == 25:
+            path = os.path.join(PATH_BASE,G25_PATH)
+        else:
+            path = os.path.join(PATH_BASE,GLATEST_PATH)
+
+        self.path = os.path.abspath(path)
+
+        if depth==5:
+            d = 5
+        else:
+            d = 2
+        
+        self.computer = create_genetic_computer(game, color, self.path, search_depth = d)
+        self.name = f"Genetic ({os.path.basename(self.path)}, Depth {depth})"
+
+    def pick(self):
+        self.computer.pick()
+
+    def get_value_prediction(self):
+        """Return the genetic model's estimated value for the current position."""
+        return self.computer.get_value_prediction()
+
+
+'''
 class ComputerGen(Computer): # Genetic algorithm model - latest
-    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","genetic","latest.json")
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","latest_v2.json")
     def __init__(self,game=None,color=None,path=None):
         super().__init__(game,color)
 
@@ -251,7 +280,7 @@ class ComputerGen(Computer): # Genetic algorithm model - latest
 
 
 class ComputerGen25(Computer): # Genetic algorithm model - 25th generation
-    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","genetic","genetic_gen_0024.json")
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","genetic_gen_0024_v2.json")
     def __init__(self,game=None,color=None,path=None):
         super().__init__(game,color)
 
@@ -268,4 +297,41 @@ class ComputerGen25(Computer): # Genetic algorithm model - 25th generation
 # Backward compat alias – Computer3 (from the old computer2 module) === ComputerSupervised
 Computer3 = ComputerSupervised
 
+class Computer50D5(Computer): # Genetic algorithm model - latest depth 5
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","genetic","latest.json")
+    def __init__(self,game=None,color=None,path=None):
+        super().__init__(game,color)
 
+        if path is None:
+            path = Computer50D5.PATH
+        self.path = os.path.abspath(path)
+        self.computer = create_genetic_computer(game, color, self.path, search_depth=5)
+        self.name = f"Genetic Latest Depth 5 ({os.path.basename(self.path)})"
+
+    def pick(self):
+        self.computer.pick()
+
+    def get_value_prediction(self):
+        """Return the genetic model's estimated value for the current position."""
+        return self.computer.get_value_prediction()
+
+
+class Computer25D5(Computer): # Genetic algorithm model - 25th gen depth 5
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","genetic","genetic_gen_0024.json")
+    def __init__(self,game=None,color=None,path=None):
+        super().__init__(game,color)
+
+        if path is None:
+            path = Computer25D5.PATH
+        self.path = os.path.abspath(path)
+        self.computer = create_genetic_computer(game, color, self.path, search_depth=5)
+        self.name = f"Genetic 25th Gen Depth 5 ({os.path.basename(self.path)})"
+
+    def pick(self):
+        self.computer.pick()
+
+    def get_value_prediction(self):
+        """Return the genetic model's estimated value for the current position."""
+        return self.computer.get_value_prediction()
+
+'''

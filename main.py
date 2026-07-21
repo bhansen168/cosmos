@@ -1,23 +1,15 @@
-"""
-GUI for the game
-"""
-
-
-import os,warnings,sys
+import os,warnings,sys,threading
 warnings.filterwarnings("ignore")
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
 pygame.init()
 
 from datetime import datetime,timedelta
+from copy import deepcopy
 
 sys.path.append(os.getcwd())
 from game import Game
-from computer import ComputerDQN,ComputerDQNMinimax,ComputerSupervised as SupervisedComputer,ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer
-import importlib
-computer2_module = importlib.import_module("computer2-PHASEOUT")
-GeneticComputer5 = computer2_module.Computer6
-GeneticComputer25_5 = computer2_module.Computer7
+from computer import ComputerDQN,ComputerSupervised as SupervisedComputer,create_minimax_computer,GeneticComputer#create_genetic_comp#ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer,GeneticComputer5 = computer2_module.Computer6,GeneticComputer25_5 = computer2_module.Computer7
 
 
 class Main:
@@ -31,20 +23,25 @@ class Main:
     LIME = (50,205,50)
     GRAY = (210,210,210)
     DARK_GREEN = (0,100,0)
+
+    GEN_PATHBASE = os.getcwd()+"\\models"
     
     AI_MODES = {
         "dqn-1k": ("Hamlet (DQN, 1.0k)", lambda g, c: ComputerDQN(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_1.0k-sav.pth")),
         "dqn-mm-1k": ("Hamlet (DQN-MM-2, 1.0k)", lambda g, c: ComputerDQNMinimax(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_1.0k-sav.pth", depth=2)),
         "dqn-9k": ("Hamlet (DQN, 9.0k)", lambda g, c: ComputerDQN(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_9.0k-sav.pth")),
         "dqn-mm-9k": ("Hamlet (DQN-MM-2, 9.0k)", lambda g, c: ComputerDQNMinimax(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_9.0k-sav.pth", depth=2)),
-        "genetic": ("Prospero (Gen-50)", GeneticComputer),
-        "genetic_25": ("Ariel (Gen-25)", GeneticComputer25),
-        "genetic_d5": ("Prospero (Gen-50-D5)", GeneticComputer5),
-        "genetic_25_d5": ("Ariel (Gen-25-D5)", GeneticComputer25_5),
+        "genetic": ("Prospero (G50-2)", [GeneticComputer,None,None]),#create_genetic_comp(pathBase = GEN_PATHBASE)),#GeneticComputer),
+        "genetic_25": ("Ariel (G25-2)", [GeneticComputer,25,None]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25)),#GeneticComputer25),
+        "genetic_d5": ("Caliban (G50-5)", [GeneticComputer,None,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,depth=5)),#GeneticComputer5),
+        "genetic_25_d5": ("Stephano (G25-5)", [GeneticComputer,25,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25,depth=5)),#GeneticComputer25_5),
+
         "supervised": ("Horatio (SL)", SupervisedComputer),
         "minimax-2": ("Hotspur (MM-2)", lambda g, c: create_minimax_computer(g, c, depth=2)),
-        "minimax-4": ("Iago (MM-4)", lambda g, c: create_minimax_computer(g, c, depth=4)),
+        "minimax-4": ("Henry V (MM-4)", lambda g, c: create_minimax_computer(g, c, depth=4)),
+        "minimax-6": ("Octavius (MM-6)", lambda g, c: create_minimax_computer(g, c, depth=6)),
     }
+
 
     TESTING_ML = False
     FPS = 60
@@ -72,6 +69,9 @@ class Main:
 
         self.compColor = (Game.WHITE if compColor == "W" else Game.BLACK)
         self.pickColor = (compColor not in ["W","B"])
+
+        self.compLoc = None
+        self.thread =  None
 
         self.showLegal = False
         self.showEval = True
@@ -105,6 +105,20 @@ class Main:
         self.featherRectL = self.featherSurfL.get_rect()
         self.featherRectL.center = (self.width/6,self.height/2)
 
+    def comp_pick(self):
+        #save previous state
+        oldBoard = deepcopy(self.game.board)
+        lastBefore = (self.game.last.copy() if self.game.last is not None else None)
+
+        #save pick
+        self.computer.pick()
+        self.compLoc = self.game.last.copy()
+
+        #revert state
+        self.game.last = lastBefore
+        self.game.board = oldBoard
+        
+
     def switch_comp(self):
         if self.mode in Main.AI_MODES: #NOT PVP
             ai_name, ai_class = Main.AI_MODES[self.mode]
@@ -117,7 +131,11 @@ class Main:
 
     def begin_game(self):
         if self.mode in Main.AI_MODES:
-            self.computer = self.compClass(self.game,self.compColor)
+            if isinstance(self.compClass ,list):
+                cls,gen,dep = self.compClass
+                self.computer = cls(os.getcwd()+"/models",game=self.game,color=self.compColor,gen=gen,depth=dep)
+            else:
+                self.computer = self.compClass(self.game,self.compColor)
         else:
             self.computer = None
         self.screen = "game"
@@ -127,16 +145,6 @@ class Main:
         self.game = Game(self.side)#never make save=True because then saves empty list
         self.activePlayerIndex = 0
 
-        '''
-        if self.mode in Main.AI_MODES:
-            ai_name, ai_class = Main.AI_MODES[self.mode]
-            self.computer = ai_class(self.game, self.compColor)
-            self.computer_name = ai_name
-            print(f"Switched to {self.mode}: {self.computer.name if hasattr(self.computer, 'name') else self.computer.__class__.__name__}")
-        else:
-            self.computer = None
-            print(f"Switched to {self.mode} mode (human vs human)")
-        '''
         self.close_timeout = None
         self.screen = "home"
         self.computer = None
@@ -371,19 +379,13 @@ class Main:
                             idx = modes.index(self.mode) if self.mode in modes else 0
                             self.mode = modes[(idx + 1) % len(modes)]
                             self.switch_comp()
-                            #self.reset()
-                            #mode_switched = True
-                            #break
+                            
                         elif event.key == pygame.K_LEFT:
                             modes = list(Main.AI_MODES.keys()) + ["player"]
                             idx = modes.index(self.mode) if self.mode in modes else 0
                             self.mode = modes[(idx - 1) % len(modes)]
                             self.switch_comp()
-                            #self.reset()
-                            #mode_switched = True
-                            #break
-                            
-                        
+                           
                         elif event.key == pygame.K_RETURN: #begin game
                             self.begin_game()
                         elif event.key == pygame.K_c:
@@ -425,11 +427,6 @@ class Main:
                                 elif key == "eval_toggle":
                                     self.showEval = not self.showEval
             
-            #if mode_switched:
-            #    continue
-
-                    
-
                             
             
             screen.fill(Main.WHITE)
@@ -442,9 +439,18 @@ class Main:
                         self.reset()
                         #self.running = False
                 elif self.computer_active():
-                    if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
-                        self.computer.pick()
-                        self.next_turn()
+                    if self.thread is None:
+                        self.thread = threading.Thread(target = self.comp_pick)
+                        self.thread.start()
+
+                    if self.compLoc is not None:
+                        if (datetime.now()-self.computer.cooldown).total_seconds() > 1.5:
+                            #    self.comp_pick()
+                            x,y = self.compLoc
+                            self.game.place_piece(self.computer.color,x,y)
+                            self.next_turn()
+                            self.compLoc = None
+                            self.thread = None
 
             self.clock.tick(Main.FPS)
 
@@ -452,22 +458,12 @@ class Main:
 
         
 if __name__ == "__main__":
-    GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player
+
+    GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player -- default
 
     AI_COLOR = ""#"B" #choices: "B","W",[anything else]
-    """
-    if GAME_MODE != "player" and AI_COLOR not in ["B","W"]:
-        while True:
-            try:
-                col = int(input("Type 1 to play as Black, or 2 to play as White: "))
-                if col == 1 or col == 2:
-                    AI_COLOR = ("B" if col == 2 else "W")
-                    break
-            except ValueError:
-                print("Please try again!")
-    """
+    
     m = Main(mode=GAME_MODE,compColor = AI_COLOR)
     m.main()
-
 
 

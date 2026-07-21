@@ -25,7 +25,6 @@ from benchmark_models import (
     discover_models,
     print_model_list,
     prompt_for_model,
-    DQNPlayer,
     ModelOption,
 )
 from game import Game, LegalMove
@@ -772,12 +771,12 @@ class SpectatorApp:
             model_name = self._fit_text(self.body_font, self.players[color].name, width)
             self.screen.blit(self.body_font.render(model_name, True, self.MUTED), (x, y))
             y += 22
-            # Show DQN value prediction for the current player if applicable
+            # Show a learned model's value prediction for the current player.
             if (
                 color == self.match.current_color
                 and self.match.at_latest
                 and self.pending is None
-                and isinstance(self.players[color], DQNPlayer)
+                and hasattr(self.players[color], "get_value_prediction")
             ):
                 try:
                     value = self.players[color].get_value_prediction(self.match.game, color)

@@ -8,13 +8,13 @@ from typing import Sequence
 from othello_engine import (
     BOARD_SIZE,
     EMPTY,
-    HeadlessOthello,
+    HeadlessOthello, #Game
     LegalMove,
     opponent,
 )
 
 
-DEFAULT_MINIMAX_DEPTH = 2  # Kept low enough for large benchmark batches.
+DEFAULT_MINIMAX_DEPTH = 4
 
 # Corners are highly valuable. Squares beside an unclaimed corner are risky.
 POSITION_WEIGHTS = (
@@ -172,6 +172,9 @@ class MinimaxPlayer:
         rng: random.Random,
     ) -> tuple[int, int]:
         del rng
+
+        game = game.copy()
+        
         ordered_moves = self._ordered_moves(legal_moves)
         best_move = ordered_moves[0]
         best_value = -self.WIN_SCORE * 2
