@@ -3,10 +3,11 @@
 
 The current genome contains opening, middlegame, and endgame weights for ten
 normalized board features. Training screens the full population with a fast
-search, then uses full-depth alpha-beta, rotating validation folds, and paired
+search, then uses a style-diverse league, rotating validation folds, and paired
 champion challenges to choose the checkpoint champion. Games combine sampled
-co-evolution with paired randomized openings against fixed and historical
-baselines.
+co-evolution with paired randomized openings against seed, heuristic-search,
+and historical genetic baselines. Bard and DQN models are deliberately absent
+from the opponent pool.
 
 Version-1 checkpoints containing the original twelve-gene, one-ply evaluator
 are upgraded in memory when loaded or resumed. Existing checkpoint files are
@@ -17,7 +18,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
+import re
 import statistics
 import time
 from dataclasses import dataclass, field
@@ -48,6 +51,7 @@ SUPPORTED_CHECKPOINT_VERSIONS = (1, CHECKPOINT_VERSION)
 DEFAULT_OUTPUT_DIRECTORY = Path(__file__).resolve().parent / "models" / "genetic"
 DEFAULT_SEARCH_DEPTH = 2
 DEFAULT_ENDGAME_EXACT_EMPTIES = 8
+DEFAULT_CHECKPOINT_SUFFIX = "v2"
 PHASE_NAMES = ("opening", "middlegame", "endgame")
 FEATURE_NAMES = (
     "disc_difference",
@@ -356,7 +360,13 @@ class GeneticPlayer:
         champion = payload.get("champion") or payload.get("generation_best")
         if not champion:
             champion = payload["best_ever"]
-        generation = int(payload["generation"])
+        checkpoint_generation = int(payload["generation"])
+        stored_origin = champion.get("origin_generation")
+        origin_generation = (
+            checkpoint_generation
+            if stored_origin is None
+            else int(stored_origin)
+        )
         search_depth = int(
             payload.get("config", {}).get("search_depth", DEFAULT_SEARCH_DEPTH)
         )
@@ -374,7 +384,8 @@ class GeneticPlayer:
         return cls(
             champion["genome"],
             name=(
-                f"Genetic (generation {generation}, {quality}, "
+                f"Genetic (champion generation {origin_generation}, "
+                f"checkpoint generation {checkpoint_generation}, {quality}, "
                 f"depth {search_depth}, {checkpoint_path.name})"
             ),
             search_depth=search_depth,
@@ -606,23 +617,27 @@ class TrainingConfig:
     games_per_pair: int = 1
     coevolution_opponents: int = 6
     baseline_games: int = 1
-    minimax_games: int = 2
-    minimax_depth: int = 2
+    minimax_games: int = 1
+    # This is the maximum anchor depth. Training and validation use every
+    # depth from 1 through this value so no single minimax style dominates.
+    minimax_depth: int = 3
     minimax_weight: float = 3.0
     training_search_depth: int = 1
     search_depth: int = DEFAULT_SEARCH_DEPTH
     endgame_exact_empties: int = DEFAULT_ENDGAME_EXACT_EMPTIES
-    opening_plies: int = 10
+    opening_plies: int = 14
     validation_candidates: int = 4
-    validation_openings: int = 2
+    validation_openings: int = 3
     validation_seed: int = 10_000
     validation_every: int = 2
-    validation_folds: int = 4
-    validation_min_improvement: float = 0.01
-    challenge_openings: int = 6
-    challenge_score: float = 0.55
-    hall_of_fame_size: int = 8
-    hall_of_fame_opponents: int = 1
+    validation_folds: int = 6
+    validation_min_improvement: float = 0.0
+    validation_hall_of_fame_opponents: int = 2
+    promotion_validation_tolerance: float = 0.01
+    challenge_openings: int = 12
+    challenge_score: float = 0.50
+    hall_of_fame_size: int = 12
+    hall_of_fame_opponents: int = 2
     hall_of_fame_weight: float = 2.0
     elite_count: int = 3
     tournament_size: int = 4
@@ -630,12 +645,14 @@ class TrainingConfig:
     mutation_rate: float = 0.25
     mutation_sigma: float = 0.25
     gene_limit: float = 4.0
-    margin_weight: float = 0.10
+    margin_weight: float = 0.05
+    normalize_genomes: bool = True
     random_immigrants: int = 2
     stagnation_generations: int = 6
     mutation_boost: float = 2.0
     stagnation_immigrants: int = 4
     checkpoint_every: int = 5
+    checkpoint_suffix: str = DEFAULT_CHECKPOINT_SUFFIX
     output_directory: Path = field(default_factory=lambda: DEFAULT_OUTPUT_DIRECTORY)
     seed: int = 0
     resume: Path | None = None
@@ -675,10 +692,14 @@ class TrainingConfig:
             raise ValueError("validation folds must be at least 1")
         if self.validation_min_improvement < 0.0:
             raise ValueError("validation minimum improvement cannot be negative")
+        if self.validation_hall_of_fame_opponents < 0:
+            raise ValueError("validation hall-of-fame opponents cannot be negative")
+        if self.promotion_validation_tolerance < 0.0:
+            raise ValueError("promotion validation tolerance cannot be negative")
         if self.challenge_openings < 1:
             raise ValueError("challenge openings must be at least 1")
-        if not 0.5 < self.challenge_score <= 1.0:
-            raise ValueError("challenge score must be greater than 0.5 and at most 1")
+        if not 0.5 <= self.challenge_score <= 1.0:
+            raise ValueError("challenge score must be between 0.5 and 1")
         if self.hall_of_fame_size < 0 or self.hall_of_fame_opponents < 0:
             raise ValueError("hall-of-fame sizes cannot be negative")
         if self.hall_of_fame_weight <= 0.0:
@@ -709,6 +730,11 @@ class TrainingConfig:
             raise ValueError("stagnation immigrants cannot be negative")
         if self.checkpoint_every < 1:
             raise ValueError("checkpoint interval must be at least 1")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", self.checkpoint_suffix):
+            raise ValueError(
+                "checkpoint suffix must contain only letters, numbers, underscores, "
+                "or hyphens"
+            )
 
 
 @dataclass(frozen=True)
@@ -853,6 +879,11 @@ def _round_robin_pairs(
     return pairs
 
 
+def _minimax_anchor_depths(config: TrainingConfig) -> tuple[int, ...]:
+    """Return a spectrum of heuristic search strengths used as anchors."""
+    return tuple(range(1, config.minimax_depth + 1))
+
+
 def evaluate_population(
     population: Sequence[Individual],
     config: TrainingConfig,
@@ -908,14 +939,27 @@ def evaluate_population(
     baselines: list[tuple[Player, int, float]] = [
         (RandomBaseline(), config.baseline_games, 1.0),
         (GreedyBaseline(), config.baseline_games, 1.0),
+        (
+            GeneticPlayer(
+                DEFAULT_SEED_GENOME,
+                "Seed evaluator",
+                search_depth=config.training_search_depth,
+                endgame_exact_empties=0,
+            ),
+            config.baseline_games,
+            1.0,
+        ),
     ]
     if config.minimax_games:
-        baselines.append(
+        anchor_depths = _minimax_anchor_depths(config)
+        anchor_weight = config.minimax_weight / len(anchor_depths)
+        baselines.extend(
             (
-                MinimaxPlayer(config.minimax_depth),
+                MinimaxPlayer(depth),
                 config.minimax_games,
-                config.minimax_weight,
+                anchor_weight,
             )
+            for depth in anchor_depths
         )
 
     archive_count = min(config.hall_of_fame_opponents, len(hall_of_fame))
@@ -958,22 +1002,56 @@ def evaluate_population(
         individual.validation_breakdown = {}
 
 
-def _validation_opponents(config: TrainingConfig) -> list[tuple[str, Player, float]]:
+def _validation_opponents(
+    config: TrainingConfig,
+    generation: int,
+    hall_of_fame: Sequence[Individual] = (),
+) -> list[tuple[str, Player, float]]:
+    """Build a deterministic, style-diverse league for champion selection."""
     opponents: list[tuple[str, Player, float]] = [
         ("random", RandomBaseline(), 0.5),
         ("greedy", GreedyBaseline(), 1.0),
-        ("minimax_depth_1", MinimaxPlayer(1), 1.5),
+        (
+            "seed_genetic",
+            GeneticPlayer(
+                DEFAULT_SEED_GENOME,
+                "Seed evaluator",
+                search_depth=config.search_depth,
+                endgame_exact_empties=config.endgame_exact_empties,
+            ),
+            1.0,
+        ),
     ]
-    target_name = f"minimax_depth_{config.minimax_depth}"
-    if config.minimax_depth == 1:
-        opponents[-1] = (target_name, MinimaxPlayer(1), config.minimax_weight)
-    else:
-        opponents.append(
+    anchor_depths = _minimax_anchor_depths(config)
+    anchor_weight = config.minimax_weight / len(anchor_depths)
+    opponents.extend(
+        (f"minimax_depth_{depth}", MinimaxPlayer(depth), anchor_weight)
+        for depth in anchor_depths
+    )
+
+    archive_count = min(
+        config.validation_hall_of_fame_opponents,
+        len(hall_of_fame),
+    )
+    if archive_count:
+        fold = (generation // config.validation_every) % config.validation_folds
+        archive_rng = random.Random(
+            config.validation_seed + 20_000_033 + fold * 1_000_037
+        )
+        archive = archive_rng.sample(list(hall_of_fame), archive_count)
+        archive_weight = config.hall_of_fame_weight / archive_count
+        opponents.extend(
             (
-                target_name,
-                MinimaxPlayer(config.minimax_depth),
-                config.minimax_weight,
+                f"historical_genetic_{index + 1}",
+                GeneticPlayer(
+                    individual.genome,
+                    f"Historical genetic {index + 1}",
+                    search_depth=config.search_depth,
+                    endgame_exact_empties=config.endgame_exact_empties,
+                ),
+                archive_weight,
             )
+            for index, individual in enumerate(archive)
         )
     return opponents
 
@@ -982,6 +1060,7 @@ def validate_candidates(
     candidates: Sequence[Individual],
     config: TrainingConfig,
     generation: int,
+    hall_of_fame: Sequence[Individual] = (),
 ) -> Individual:
     """Choose the best candidate on one rotating validation fold."""
     fold = (generation // config.validation_every) % config.validation_folds
@@ -992,7 +1071,7 @@ def validate_candidates(
         _make_scenario(validation_rng, config.opening_plies)
         for _ in range(config.validation_openings)
     ]
-    opponents = _validation_opponents(config)
+    opponents = _validation_opponents(config, generation, hall_of_fame)
     validated: list[Individual] = []
 
     for candidate in candidates[: config.validation_candidates]:
@@ -1113,15 +1192,47 @@ def challenge_champion(
 
     games = wins + losses + draws
     match_score = (wins + 0.5 * draws) / games
+    average_disc_margin = disc_margin / games
+    passed = _challenge_passed(
+        match_score,
+        average_disc_margin,
+        config.challenge_score,
+    )
     return {
         "wins": wins,
         "losses": losses,
         "draws": draws,
         "games": games,
         "score": match_score,
-        "average_disc_margin": disc_margin / games,
-        "passed": match_score >= config.challenge_score,
+        "average_disc_margin": average_disc_margin,
+        "passed": passed,
     }
+
+
+def _challenge_passed(
+    match_score: float,
+    average_disc_margin: float,
+    required_score: float,
+) -> bool:
+    """Break an exact match-point tie with disc margin."""
+    return (
+        match_score > required_score + 1e-12
+        or (
+            abs(match_score - required_score) <= 1e-12
+            and average_disc_margin > 0.0
+        )
+    )
+
+
+def _eligible_for_challenge(
+    validation_advantage: float,
+    config: TrainingConfig,
+) -> bool:
+    """Let statistically near-equal league leaders settle the result directly."""
+    return validation_advantage >= (
+        config.validation_min_improvement
+        - config.promotion_validation_tolerance
+    )
 
 
 def _tournament_select(
@@ -1166,13 +1277,35 @@ def _mutate(
             )
 
 
+def _normalize_genome_scale(genome: list[float], gene_limit: float) -> None:
+    """Remove the evaluator's behaviorally redundant global scale.
+
+    Multiplying every evaluator weight by the same positive constant does not
+    change move ordering, but it otherwise gives evolution a neutral direction
+    to wander through. Keeping offspring at unit RMS spends mutations on weight
+    ratios instead of arbitrary magnitude.
+    """
+    if not genome:
+        return
+    rms = math.sqrt(sum(value * value for value in genome) / len(genome))
+    if rms <= 1e-12:
+        return
+    scale = 1.0 / rms
+    maximum = max(abs(value) for value in genome)
+    if maximum > 0.0:
+        scale = min(scale, gene_limit / maximum)
+    for index, value in enumerate(genome):
+        genome[index] = _clamp(value * scale, -gene_limit, gene_limit)
+
+
 def _random_individual(config: TrainingConfig, rng: random.Random) -> Individual:
-    return Individual(
-        [
-            rng.uniform(-config.gene_limit / 2, config.gene_limit / 2)
-            for _ in range(GENOME_SIZE)
-        ]
-    )
+    genome = [
+        rng.uniform(-config.gene_limit / 2, config.gene_limit / 2)
+        for _ in range(GENOME_SIZE)
+    ]
+    if config.normalize_genomes:
+        _normalize_genome_scale(genome, config.gene_limit)
+    return Individual(genome)
 
 
 def reproduce(
@@ -1210,6 +1343,8 @@ def reproduce(
         else:
             genome = first.genome.copy()
         _mutate(genome, config, rng, sigma_multiplier)
+        if config.normalize_genomes:
+            _normalize_genome_scale(genome, config.gene_limit)
         next_population.append(Individual(genome))
 
     while len(next_population) < config.population_size:
@@ -1237,7 +1372,10 @@ def _reproduction_settings(
 
 
 def create_population(config: TrainingConfig, rng: random.Random) -> list[Individual]:
-    population = [Individual(list(DEFAULT_SEED_GENOME))]
+    seed_genome = list(DEFAULT_SEED_GENOME)
+    if config.normalize_genomes:
+        _normalize_genome_scale(seed_genome, config.gene_limit)
+    population = [Individual(seed_genome)]
     while len(population) < config.population_size:
         population.append(_random_individual(config, rng))
     return population
@@ -1307,6 +1445,10 @@ def _config_payload(config: TrainingConfig) -> dict[str, Any]:
         "validation_every": config.validation_every,
         "validation_folds": config.validation_folds,
         "validation_min_improvement": config.validation_min_improvement,
+        "validation_hall_of_fame_opponents": (
+            config.validation_hall_of_fame_opponents
+        ),
+        "promotion_validation_tolerance": config.promotion_validation_tolerance,
         "challenge_openings": config.challenge_openings,
         "challenge_score": config.challenge_score,
         "hall_of_fame_size": config.hall_of_fame_size,
@@ -1319,11 +1461,13 @@ def _config_payload(config: TrainingConfig) -> dict[str, Any]:
         "mutation_sigma": config.mutation_sigma,
         "gene_limit": config.gene_limit,
         "margin_weight": config.margin_weight,
+        "normalize_genomes": config.normalize_genomes,
         "random_immigrants": config.random_immigrants,
         "stagnation_generations": config.stagnation_generations,
         "mutation_boost": config.mutation_boost,
         "stagnation_immigrants": config.stagnation_immigrants,
         "checkpoint_every": config.checkpoint_every,
+        "checkpoint_suffix": config.checkpoint_suffix,
         "seed": config.seed,
     }
 
@@ -1340,6 +1484,7 @@ def save_checkpoint(
     rng: random.Random,
     last_challenge: dict[str, Any] | None = None,
     last_recovery_stagnation: int = 0,
+    validation_leader: Individual | None = None,
 ) -> None:
     champion_payload = _individual_payload(champion)
     payload = {
@@ -1351,6 +1496,11 @@ def save_checkpoint(
         "phase_names": PHASE_NAMES,
         "genome_layout": "opening, middlegame, then endgame feature weights",
         "generation_best": _individual_payload(generation_best),
+        "validation_leader": (
+            None
+            if validation_leader is None
+            else _individual_payload(validation_leader)
+        ),
         "champion": champion_payload,
         # Compatibility alias for older consumers. Selection now uses champion.
         "best_ever": champion_payload,
@@ -1417,7 +1567,7 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
     if version == 1:
         payload = _upgrade_version_one_payload(payload)
 
-    for key in ("generation_best", "champion", "best_ever"):
+    for key in ("generation_best", "validation_leader", "champion", "best_ever"):
         stored = payload.get(key)
         if stored and len(stored.get("genome", [])) != GENOME_SIZE:
             raise ValueError(f"Checkpoint contains an invalid genome: {checkpoint_path}")
@@ -1497,6 +1647,14 @@ def _restore_hall_of_fame(
     return hall_of_fame
 
 
+def _checkpoint_filename(generation: int, suffix: str) -> str:
+    return f"genetic_gen_{generation:04d}_{suffix}.json"
+
+
+def _latest_checkpoint_filename(suffix: str) -> str:
+    return f"latest_{suffix}.json"
+
+
 def train(config: TrainingConfig) -> Path:
     """Run evolution and return the final checkpoint path."""
     config.validate()
@@ -1509,6 +1667,7 @@ def train(config: TrainingConfig) -> Path:
     stagnation_count = 0
     last_recovery_stagnation = 0
     last_challenge: dict[str, Any] | None = None
+    last_validation_leader: Individual | None = None
     if config.resume is not None:
         resume_path = Path(config.resume).expanduser().resolve()
         resume_payload = load_checkpoint(resume_path)
@@ -1516,6 +1675,11 @@ def train(config: TrainingConfig) -> Path:
         stored_champion = resume_payload.get("champion")
         if stored_champion:
             champion = _individual_from_payload(stored_champion)
+        stored_validation_leader = resume_payload.get("validation_leader")
+        if stored_validation_leader:
+            last_validation_leader = _individual_from_payload(
+                stored_validation_leader
+            )
         hall_of_fame = _restore_hall_of_fame(
             resume_payload,
             resume_path,
@@ -1590,7 +1754,13 @@ def train(config: TrainingConfig) -> Path:
         validation_elapsed = 0.0
         if should_validate:
             validation_started = time.perf_counter()
-            validation_leader = validate_candidates(ranked, config, generation)
+            validation_leader = validate_candidates(
+                ranked,
+                config,
+                generation,
+                hall_of_fame,
+            )
+            last_validation_leader = validation_leader.copy()
             if champion is None or champion.validation_score is None:
                 champion = validation_leader.copy()
                 _add_to_hall_of_fame(
@@ -1601,7 +1771,12 @@ def train(config: TrainingConfig) -> Path:
                 stagnation_count = 0
                 promoted = True
             else:
-                incumbent = validate_candidates([champion], config, generation)
+                incumbent = validate_candidates(
+                    [champion],
+                    config,
+                    generation,
+                    hall_of_fame,
+                )
                 assert validation_leader.validation_score is not None
                 assert incumbent.validation_score is not None
                 validation_advantage = (
@@ -1611,7 +1786,7 @@ def train(config: TrainingConfig) -> Path:
                 if _same_genome(validation_leader, champion):
                     champion = incumbent
                     stagnation_count += 1
-                elif validation_advantage >= config.validation_min_improvement:
+                elif _eligible_for_challenge(validation_advantage, config):
                     challenge_result = challenge_champion(
                         validation_leader,
                         incumbent,
@@ -1644,14 +1819,22 @@ def train(config: TrainingConfig) -> Path:
                 else:
                     champion = incumbent
                     stagnation_count += 1
+            _add_to_hall_of_fame(
+                hall_of_fame,
+                validation_leader,
+                config.hall_of_fame_size,
+            )
             validation_elapsed = time.perf_counter() - validation_started
         assert champion is not None
 
         fitnesses = [individual.fitness for individual in population]
-        target_name = f"minimax_depth_{config.minimax_depth}"
+        deepest_anchor_name = f"minimax_depth_{config.minimax_depth}"
         reported_candidate = validation_leader or champion
-        target_result = reported_candidate.validation_breakdown.get(target_name, {})
-        target_win_rate = float(target_result.get("win_rate", 0.0))
+        anchor_result = reported_candidate.validation_breakdown.get(
+            deepest_anchor_name,
+            {},
+        )
+        anchor_win_rate = float(anchor_result.get("win_rate", 0.0))
         if validation_leader is None:
             validation_text = "skipped"
         else:
@@ -1676,7 +1859,7 @@ def train(config: TrainingConfig) -> Path:
             f"fitness best={generation_best.fitness:.4f}, "
             f"mean={statistics.mean(fitnesses):.4f}, "
             f"validation_score={validation_text}, "
-            f"target wins={target_win_rate:.1%}, "
+            f"deepest anchor wins={anchor_win_rate:.1%}, "
             f"diversity={_genome_diversity(population):.3f}, "
             f"games/genome={generation_best.games}, "
             f"screen={screening_elapsed:.2f}s, "
@@ -1691,7 +1874,10 @@ def train(config: TrainingConfig) -> Path:
             or is_final_generation
         )
         if should_save:
-            checkpoint = config.output_directory / f"genetic_gen_{generation:04d}.json"
+            checkpoint = config.output_directory / _checkpoint_filename(
+                generation,
+                config.checkpoint_suffix,
+            )
             save_checkpoint(
                 checkpoint,
                 generation,
@@ -1704,9 +1890,11 @@ def train(config: TrainingConfig) -> Path:
                 rng,
                 last_challenge,
                 last_recovery_stagnation,
+                last_validation_leader,
             )
             save_checkpoint(
-                config.output_directory / "latest.json",
+                config.output_directory
+                / _latest_checkpoint_filename(config.checkpoint_suffix),
                 generation,
                 population,
                 generation_best,
@@ -1717,6 +1905,7 @@ def train(config: TrainingConfig) -> Path:
                 rng,
                 last_challenge,
                 last_recovery_stagnation,
+                last_validation_leader,
             )
             final_checkpoint = checkpoint
             print(f"  Saved checkpoint: {checkpoint}")
@@ -1785,9 +1974,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--minimax-games",
         type=int,
         default=defaults.minimax_games,
-        help="paired openings against the target minimax",
+        help="paired openings against each minimax anchor depth",
     )
-    parser.add_argument("--minimax-depth", type=int, default=defaults.minimax_depth)
+    parser.add_argument(
+        "--minimax-depth",
+        type=int,
+        default=defaults.minimax_depth,
+        help="maximum anchor depth; every depth from 1 through this value is used",
+    )
     parser.add_argument("--minimax-weight", type=float, default=defaults.minimax_weight)
     parser.add_argument(
         "--training-search-depth",
@@ -1841,6 +2035,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="minimum same-fold score advantage required to challenge the champion",
     )
     parser.add_argument(
+        "--validation-hall-of-fame-opponents",
+        type=int,
+        default=defaults.validation_hall_of_fame_opponents,
+        help="historical genetic opponents in the champion-selection league",
+    )
+    parser.add_argument(
+        "--promotion-validation-tolerance",
+        type=float,
+        default=defaults.promotion_validation_tolerance,
+        help=(
+            "how far below the incumbent a league leader may score and still "
+            "earn a head-to-head challenge"
+        ),
+    )
+    parser.add_argument(
         "--challenge-openings",
         type=int,
         default=defaults.challenge_openings,
@@ -1878,6 +2087,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--gene-limit", type=float, default=defaults.gene_limit)
     parser.add_argument("--margin-weight", type=float, default=defaults.margin_weight)
     parser.add_argument(
+        "--no-normalize-genomes",
+        dest="normalize_genomes",
+        action="store_false",
+        default=defaults.normalize_genomes,
+        help="disable behavior-preserving unit-RMS normalization of new genomes",
+    )
+    parser.add_argument(
         "--random-immigrants",
         type=int,
         default=defaults.random_immigrants,
@@ -1898,6 +2114,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--checkpoint-every",
         type=int,
         default=defaults.checkpoint_every,
+    )
+    parser.add_argument(
+        "--checkpoint-suffix",
+        default=defaults.checkpoint_suffix,
+        help="suffix for periodic and latest checkpoint names",
     )
     parser.add_argument(
         "--output-directory",
@@ -1937,6 +2158,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         validation_every=args.validation_every,
         validation_folds=args.validation_folds,
         validation_min_improvement=args.validation_min_improvement,
+        validation_hall_of_fame_opponents=(
+            args.validation_hall_of_fame_opponents
+        ),
+        promotion_validation_tolerance=args.promotion_validation_tolerance,
         challenge_openings=args.challenge_openings,
         challenge_score=args.challenge_score,
         hall_of_fame_size=args.hall_of_fame_size,
@@ -1949,11 +2174,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         mutation_sigma=args.mutation_sigma,
         gene_limit=args.gene_limit,
         margin_weight=args.margin_weight,
+        normalize_genomes=args.normalize_genomes,
         random_immigrants=args.random_immigrants,
         stagnation_generations=args.stagnation_generations,
         mutation_boost=args.mutation_boost,
         stagnation_immigrants=args.stagnation_immigrants,
         checkpoint_every=args.checkpoint_every,
+        checkpoint_suffix=args.checkpoint_suffix,
         output_directory=args.output_directory,
         seed=args.seed,
         resume=args.resume,
