@@ -573,6 +573,8 @@ def choose_search_move(
 ) -> tuple[int, int]:
     """Choose a move using policy ordering and value-guided alpha-beta."""
 
+    game = game.copy()
+
     search = config or SearchConfig()
     search.validate()
     if not legal_moves:
