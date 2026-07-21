@@ -14,11 +14,7 @@ from copy import deepcopy
 
 sys.path.append(os.getcwd())
 from game import Game
-from computer import ComputerDQN,ComputerSupervised as SupervisedComputer,ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer
-import importlib
-computer2_module = importlib.import_module("computer2-PHASEOUT")
-GeneticComputer5 = computer2_module.Computer6
-GeneticComputer25_5 = computer2_module.Computer7
+from computer import ComputerDQN,ComputerSupervised as SupervisedComputer,create_minimax_computer,GeneticComputer#create_genetic_comp#ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer,GeneticComputer5 = computer2_module.Computer6,GeneticComputer25_5 = computer2_module.Computer7
 
 
 class Main:
@@ -32,18 +28,22 @@ class Main:
     LIME = (50,205,50)
     GRAY = (210,210,210)
     DARK_GREEN = (0,100,0)
+
+    GEN_PATHBASE = os.getcwd()+"\\models"
     
     AI_MODES = {
         "dqn": ("Hamlet (DQN)", ComputerDQN),
-        "genetic": ("Prospero (G50-2)", GeneticComputer),
-        "genetic_25": ("Ariel (G25-2)", GeneticComputer25),
-        "genetic_d5": ("Caliban (G50-5)", GeneticComputer5),
-        "genetic_25_d5": ("Stephano (G25-5)", GeneticComputer25_5),
+        "genetic": ("Prospero (G50-2)", [GeneticComputer,None,None]),#create_genetic_comp(pathBase = GEN_PATHBASE)),#GeneticComputer),
+        "genetic_25": ("Ariel (G25-2)", [GeneticComputer,25,None]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25)),#GeneticComputer25),
+        "genetic_d5": ("Caliban (G50-5)", [GeneticComputer,None,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,depth=5)),#GeneticComputer5),
+        "genetic_25_d5": ("Stephano (G25-5)", [GeneticComputer,25,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25,depth=5)),#GeneticComputer25_5),
+
         "supervised": ("Horatio (SL)", SupervisedComputer),
         "minimax-2": ("Hotspur (MM-2)", lambda g, c: create_minimax_computer(g, c, depth=2)),
         "minimax-4": ("Henry V (MM-4)", lambda g, c: create_minimax_computer(g, c, depth=4)),
         "minimax-6": ("Octavius (MM-6)", lambda g, c: create_minimax_computer(g, c, depth=6)),
     }
+
 
     TESTING_ML = False
     FPS = 60
@@ -132,7 +132,11 @@ class Main:
 
     def begin_game(self):
         if self.mode in Main.AI_MODES:
-            self.computer = self.compClass(self.game,self.compColor)
+            if isinstance(self.compClass ,list):
+                cls,gen,dep = self.compClass
+                self.computer = cls(os.getcwd()+"/models",game=self.game,color=self.compColor,gen=gen,depth=dep)
+            else:
+                self.computer = self.compClass(self.game,self.compColor)
         else:
             self.computer = None
         self.screen = "game"
@@ -444,7 +448,7 @@ class Main:
 
         
 #if __name__ == "__main__":
-async def main():
+def main():
     GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player
 
     AI_COLOR = ""#"B" #choices: "B","W",[anything else]
