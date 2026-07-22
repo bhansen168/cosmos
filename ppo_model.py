@@ -744,8 +744,10 @@ class PPOPlayer:
         )
         self.search.validate()
         config = self.model.config
+        iteration = self.payload.get("training_state", {}).get("iteration")
+        iteration_text = "" if iteration is None else f", iteration {iteration}"
         self.name = (
-            f"PPO ({self.checkpoint.name}, {config.channels} channels, "
+            f"PPO ({self.checkpoint.name}{iteration_text}, {config.channels} channels, "
             f"{config.residual_blocks} blocks, search {self.search.depth}, "
             f"exact {self.search.endgame_exact_empties})"
         )

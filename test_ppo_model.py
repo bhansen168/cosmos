@@ -120,6 +120,7 @@ class NetworkAndCheckpointTests(unittest.TestCase):
 
             player = build_player(f"ppo:{checkpoint}")
             self.assertIsInstance(player, PPOPlayer)
+            self.assertIn("iteration 3", player.name)
             game = Game()
             original_board = [row.copy() for row in game.board]
             legal_moves = game.legal_moves(Game.BLACK)

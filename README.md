@@ -12,6 +12,11 @@ python benchmark_models.py --player-1 genetic --player-2 ppo --games 100
 python benchmark_models.py --player-1 dqn --player-2 minimax:3 --games 100
 ```
 
+Benchmarks use four randomized opening plies by default and reuse each opening
+with the players' colors swapped. This prevents deterministic players from
+repeating the same two games throughout a large match. Use
+`--opening-plies 0` to benchmark only the standard starting position.
+
 The available names are `random`, `greedy`, `minimax`, `dqn`, `bard`,
 `genetic`, and `ppo`. `ppo` combines the learned policy/value network with
 depth-2 policy-guided search and an exact eight-empty endgame search. The

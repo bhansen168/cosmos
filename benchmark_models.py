@@ -40,7 +40,6 @@ from othello_engine import (
     LegalMove,
     Player,
     opponent,  # noqa: F401 - retained as a compatibility re-export
-    play_game as play_engine_game,
 )
 
 
@@ -418,14 +417,48 @@ def play_game(
     players: tuple[Player, Player],
     player_colors: tuple[int, int],
     rng: random.Random,
+    initial_game: HeadlessOthello | None = None,
+    current_color: int = BLACK,
 ) -> GameResult:
+    game = HeadlessOthello() if initial_game is None else initial_game.clone()
     black_index = player_colors.index(BLACK)
     white_index = player_colors.index(WHITE)
-    outcome = play_engine_game(players[black_index], players[white_index], rng)
+    players_by_color = {
+        BLACK: players[black_index],
+        WHITE: players[white_index],
+    }
+    color = current_color
+    moves_played = (
+        sum(square != HeadlessOthello.EMPTY for row in game.board for square in row) - 4
+    )
+    while True:
+        legal_moves = game.legal_moves(color)
+        if not legal_moves:
+            other = opponent(color)
+            if not game.legal_moves(other):
+                break
+            color = other
+            continue
+        selected = players_by_color[color].choose_move(
+            game,
+            color,
+            legal_moves,
+            rng,
+        )
+        legal_by_coordinate = {(move.x, move.y): move for move in legal_moves}
+        if selected not in legal_by_coordinate:
+            raise RuntimeError(
+                f"{players_by_color[color].name} selected illegal move {selected}"
+            )
+        game.play(color, legal_by_coordinate[selected])
+        moves_played += 1
+        color = opponent(color)
+
+    scores = game.get_score()
 
     scores_by_color = {
-        BLACK: outcome.black_score,
-        WHITE: outcome.white_score,
+        BLACK: scores[BLACK],
+        WHITE: scores[WHITE],
     }
     player_scores = (
         scores_by_color[player_colors[0]],
@@ -440,8 +473,30 @@ def play_game(
         winner=winner,
         player_scores=player_scores,
         player_colors=player_colors,
-        moves=outcome.moves,
+        moves=moves_played,
     )
+
+
+def randomized_opening(
+    rng: random.Random,
+    plies: int,
+) -> tuple[HeadlessOthello, int]:
+    """Create a reproducible legal opening and return the next color to move."""
+
+    if plies < 0:
+        raise ValueError("opening plies cannot be negative")
+    game = HeadlessOthello()
+    color = BLACK
+    for _ in range(plies):
+        legal_moves = game.legal_moves(color)
+        if not legal_moves:
+            color = opponent(color)
+            legal_moves = game.legal_moves(color)
+            if not legal_moves:
+                break
+        game.play(color, rng.choice(legal_moves))
+        color = opponent(color)
+    return game, color
 
 
 def run_match(
@@ -449,17 +504,33 @@ def run_match(
     games: int,
     seed: int,
     show_progress: bool,
+    opening_plies: int = 4,
 ) -> tuple[MatchStats, float]:
+    if opening_plies < 0:
+        raise ValueError("opening_plies cannot be negative")
     rng = random.Random(seed)
     stats = MatchStats()
     progress_interval = max(1, games // 10)
     started = time.perf_counter()
 
+    opening: HeadlessOthello | None = None
+    opening_color = BLACK
     for game_index in range(games):
+        if game_index % 2 == 0:
+            opening, opening_color = randomized_opening(rng, opening_plies)
         # Alternating colors prevents either player from always receiving the
-        # first-move advantage. Player 1 is Black in game 1.
+        # first-move advantage. Each pair reuses the exact same opening with
+        # player colors swapped; Player 1 is Black in game 1.
         colors = (BLACK, WHITE) if game_index % 2 == 0 else (WHITE, BLACK)
-        stats.record(play_game(players, colors, rng))
+        stats.record(
+            play_game(
+                players,
+                colors,
+                rng,
+                initial_game=opening,
+                current_color=opening_color,
+            )
+        )
 
         completed = game_index + 1
         if show_progress and (
@@ -481,11 +552,13 @@ def print_results(
     stats: MatchStats,
     elapsed: float,
     seed: int,
+    opening_plies: int,
 ) -> None:
     print("\nMatchup")
     print(f"  Player 1: {players[0].name}")
     print(f"  Player 2: {players[1].name}")
     print(f"  Games:    {stats.games} (colors alternated)")
+    print(f"  Openings: paired, {opening_plies} randomized plies")
     print(f"  Seed:     {seed}")
 
     print("\nResults")
@@ -541,6 +614,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Random seed for reproducible games (default: 0)",
     )
     parser.add_argument(
+        "--opening-plies",
+        type=int,
+        default=4,
+        help="random opening moves shared by each color-swapped pair (default: 4)",
+    )
+    parser.add_argument(
         "--no-progress",
         action="store_true",
         help="Do not print progress while games run",
@@ -582,6 +661,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if games <= 0:
         print("Error: --games must be a positive whole number.", file=sys.stderr)
         return 2
+    if args.opening_plies < 0:
+        print("Error: --opening-plies cannot be negative.", file=sys.stderr)
+        return 2
 
     try:
         players = (build_player(player_specs[0]), build_player(player_specs[1]))
@@ -590,12 +672,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             games=games,
             seed=args.seed,
             show_progress=not args.no_progress,
+            opening_plies=args.opening_plies,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print_results(players, stats, elapsed, args.seed)
+    print_results(players, stats, elapsed, args.seed, args.opening_plies)
     return 0
 
 

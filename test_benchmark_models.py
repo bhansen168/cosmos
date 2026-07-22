@@ -22,6 +22,7 @@ if not hasattr(pygame_stub, "init"):
 from benchmark_models import (  # noqa: E402
     BLACK,
     WHITE,
+    GameResult,
     GreedyPlayer,
     HeadlessOthello,
     MinimaxPlayer,
@@ -37,6 +38,7 @@ from benchmark_models import (  # noqa: E402
     normalize_genetic_checkpoint,
     normalize_ppo_checkpoint,
     opponent,
+    randomized_opening,
     run_match,
 )
 from computer import (  # noqa: E402
@@ -150,6 +152,35 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(stats.games_as_black, [3, 2])
         self.assertEqual(sum(stats.wins) + stats.draws, 5)
         self.assertGreater(sum(stats.total_discs), 0)
+
+    def test_randomized_openings_are_reproducible_and_paired(self) -> None:
+        first, first_color = randomized_opening(random.Random(17), 4)
+        repeated, repeated_color = randomized_opening(random.Random(17), 4)
+        self.assertEqual(first.board, repeated.board)
+        self.assertEqual(first_color, repeated_color)
+        self.assertEqual(
+            sum(square != Game.EMPTY for row in first.board for square in row),
+            8,
+        )
+
+        observed: list[tuple[tuple[int, ...], ...]] = []
+
+        def record_opening(players, colors, rng, initial_game, current_color):
+            del players, rng, current_color
+            observed.append(tuple(tuple(row) for row in initial_game.board))
+            return GameResult(None, (32, 32), colors, 60)
+
+        with mock.patch("benchmark_models.play_game", side_effect=record_opening):
+            run_match(
+                (RandomPlayer(), GreedyPlayer()),
+                games=4,
+                seed=31,
+                show_progress=False,
+                opening_plies=4,
+            )
+        self.assertEqual(observed[0], observed[1])
+        self.assertEqual(observed[2], observed[3])
+        self.assertNotEqual(observed[0], observed[2])
 
     def test_checkpoint_discovery_lists_one_latest_model_per_family(self) -> None:
         options = discover_models()
