@@ -251,7 +251,7 @@ def create_ppo_computer(
 
 class ComputerSupervised(Computer):
     #formerly known as Computer3
-    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","synth-20260720133316.bard")
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","synthprune-0.5-20260723144438.bard")
     #dataset sourced from Kaggle (CSV) and WTHOR (French Othello Federation)
     def __init__(self,game=None,color=None,path=None):
         super().__init__(game,color)

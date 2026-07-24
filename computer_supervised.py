@@ -98,9 +98,11 @@ class CompSupervised:
 
     ENV = None
 
-    def __init__(self,useSynthetic = True):
+    def __init__(self,useSynthetic = True,pruneThreshold = 1):
         from parse_csv import parse_csv
         from readWTB import parse_wtb
+
+        self.threshold = pruneThreshold
 
         #self.files = [file for file in os.listdir(CompSupervised.DATA) if (file.endswith(".wtb") or file.endswith(".csv") or file.endswith(".tmpst"))]
         self.files = []
@@ -124,6 +126,7 @@ class CompSupervised:
                 with open(path2,"rb") as fileRef:
                     data = pickle.load(fileRef)
                 self.games.extend(data) #should already be adjusted for 0-8
+                count = len(data)
                 
             else:
                 if file.endswith(".wtb"):
@@ -133,8 +136,10 @@ class CompSupervised:
                 elif useSynthetic: #assume .tmpst ext
                     new = from_tmpst(path)
 
+                count = len(new)
+
                 self.format_data(new,savePath = path2)
-            print(f"Processed file {f+1}/{len(self.files)} -- \"{file}\" -- ({round((f+1)/len(self.files) * 100,2)}%)")
+            print(f"Processed file {f+1}/{len(self.files)} -- \"{file}\" -- {count:,} game{('s' if count!=1 else '')}")
 
         print(f"Games: {len(self.games):,}")
 
@@ -227,7 +232,7 @@ class CompSupervised:
 
             
         #print("Formatted data!")
-    def train(self, savePath="model.bard"): 
+    def train(self, savePath="model.bard"):
         from sklearn.model_selection import train_test_split
         from xgboost import XGBClassifier
 
@@ -263,6 +268,7 @@ class CompSupervised:
             n_estimators=100, 
             max_depth=6, 
             random_state=42,
+            min_child_weight=self.threshold,
             eval_metric='mlogloss'
         )
 
@@ -351,5 +357,6 @@ def load_agent(file):
 
 
 if __name__ == "__main__":
-    cs = CompSupervised()
-    cs.train(savePath=os.getcwd()+f"/models/supervised/synth-{str(datetime.now()).split('.')[0].replace('-','').replace(' ','').replace(':','')}.bard")
+    THRESHOLD = 0.5
+    cs = CompSupervised(pruneThreshold = THRESHOLD)
+    cs.train(savePath=os.getcwd()+f"/models/synthprune-{THRESHOLD}-{str(datetime.now()).split('.')[0].replace('-','').replace(' ','').replace(':','')}.bard")

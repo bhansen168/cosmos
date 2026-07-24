@@ -1,0 +1,18 @@
+Results
+5) Pruned-.25 - Against GEN: 17/100 - Against MM-4: 16/100
+
+
+#BEST-2
+2) Pruned-.5 - Against Minimax-4: 18/100 - Against GEN: 24/200 (12%), 2/200 drawn
+
+6) Pruned-.75 - Against GEN: 10/100 - Against MM-4: 16/100
+7) Pruned-1 - GEN: 17/100 - MM-4: 12/100
+
+#BEST
+1) Pruned-2 - Against Minimax-4: 19/100 (2d) - Against GEN: 26/200 (13%), 3 drawn
+
+3) Pruned-2.5 - Against GEN: 18/100 - Against MM-4: 17/100
+#4) Pruned-5 - Against Minimax-4: 12/100 - Against GEN: 6/100
+
+
+Unpruned - Against Minimax-4: 11/100 (2d) - Against GEN: 14/100 (1d)
