@@ -402,17 +402,20 @@ def discover_models() -> list[ModelOption]:
         )
 
     if MODELS_DIRECTORY.exists():
-        for checkpoint in sorted(MODELS_DIRECTORY.rglob("*.bard")):
-            relative = checkpoint.relative_to(PROJECT_ROOT)
-            is_default = checkpoint.resolve() == DEFAULT_BARD_CHECKPOINT.resolve()
-            spec = "bard" if is_default else f"bard:{relative}"
-            default_label = " — default" if is_default else ""
-            options.append(
-                ModelOption(
-                    spec,
-                    f"Bard supervised: {relative}{default_label}",
+        bard_checkpoints = sorted(MODELS_DIRECTORY.rglob("*.bard"))
+        if bard_checkpoints:
+            DEFAULT_BARD_CHECKPOINT = latest_bard_checkpoint()
+            for checkpoint in bard_checkpoints:
+                relative = checkpoint.relative_to(PROJECT_ROOT)
+                is_default = checkpoint.resolve() == DEFAULT_BARD_CHECKPOINT.resolve()
+                spec = "bard" if is_default else f"bard:{relative}"
+                default_label = " — default" if is_default else ""
+                options.append(
+                    ModelOption(
+                        spec,
+                        f"Bard supervised: {relative}{default_label}",
+                    )
                 )
-            )
 
         for checkpoint in sorted(MODELS_DIRECTORY.rglob("*.pth")):
             relative = checkpoint.relative_to(PROJECT_ROOT)

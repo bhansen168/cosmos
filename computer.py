@@ -243,8 +243,10 @@ class GeneticComputer(Computer):
 
         self.path = os.path.abspath(path)
 
-        if depth==5:
+        if depth == 5:
             d = 5
+        elif depth == 1:
+            d = 1
         else:
             d = 2
         

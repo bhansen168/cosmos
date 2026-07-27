@@ -1,4 +1,4 @@
-import os,warnings,sys,threading
+import os,warnings,sys,threading,re
 warnings.filterwarnings("ignore")
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
@@ -9,7 +9,44 @@ from copy import deepcopy
 
 sys.path.append(os.getcwd())
 from game import Game
-from computer import ComputerDQN,ComputerSupervised as SupervisedComputer,create_minimax_computer,GeneticComputer#create_genetic_comp#ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer,GeneticComputer5 = computer2_module.Computer6,GeneticComputer25_5 = computer2_module.Computer7
+from computer import ComputerDQN,ComputerDQNMinimax,ComputerSupervised as SupervisedComputer,create_minimax_computer,GeneticComputer#create_genetic_comp#ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer,GeneticComputer5 = computer2_module.Computer6,GeneticComputer25_5 = computer2_module.Computer7
+
+def latest_dqn_checkpoint(folder="models/checkpoints", version="v02"):
+    """Return the path to the highest-episode DQN checkpoint in `folder`."""
+    pat = re.compile(rf"othello_{re.escape(version)}_(\d+(?:\.\d+)?)k-sav\.pth$")
+    best_ep, best_path = -1, None
+    if os.path.isdir(folder):
+        for fname in os.listdir(folder):
+            m = pat.match(fname)
+            if m:
+                ep = int(round(float(m.group(1)) * 1000))
+                if ep > best_ep:
+                    best_ep = ep
+                    best_path = os.path.join(folder, fname)
+    if best_path and os.path.isfile(best_path):
+        return best_path
+    return folder + "/othello_" + version + "_1.0k-sav.pth"  # fallback
+
+
+def discover_dqn_checkpoints(folder="models/checkpoints", version="v02"):
+    """Scan folder for DQN checkpoints and return a dict of AI_MODES entries."""
+    pat = re.compile(rf"othello_{re.escape(version)}_(\d+(?:\.\d+)?)k-sav\.pth$")
+    modes = {}
+    if not os.path.isdir(folder):
+        return modes
+    for fname in os.listdir(folder):
+        m = pat.match(fname)
+        if m:
+            ep_label = m.group(1)  # e.g. "1.0", "3k"
+            path = os.path.join(folder, fname)
+            key = f"dqn-{ep_label}k"
+            label = f"Hamlet (DQN, {ep_label}k)"
+            modes[key] = (label, lambda g, c, p=path: ComputerDQN(g, c, path=p))
+            modes[f"dqn-mm-{ep_label}k"] = (
+                f"Hamlet (DQN-MM-2, {ep_label}k)",
+                lambda g, c, p=path: ComputerDQNMinimax(g, c, path=p, depth=2),
+            )
+    return modes
 
 
 class Main:
@@ -27,20 +64,18 @@ class Main:
     GEN_PATHBASE = os.getcwd()+"\\models"
     
     AI_MODES = {
-        "dqn-1k": ("Hamlet (DQN, 1.0k)", lambda g, c: ComputerDQN(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_1.0k-sav.pth")),
-        "dqn-mm-1k": ("Hamlet (DQN-MM-2, 1.0k)", lambda g, c: ComputerDQNMinimax(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_1.0k-sav.pth", depth=2)),
-        "dqn-9k": ("Hamlet (DQN, 9.0k)", lambda g, c: ComputerDQN(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_9.0k-sav.pth")),
-        "dqn-mm-9k": ("Hamlet (DQN-MM-2, 9.0k)", lambda g, c: ComputerDQNMinimax(g, c, path=os.getcwd()+"/models/checkpoints/othello_v02_9.0k-sav.pth", depth=2)),
-        "genetic": ("Prospero (G50-2)", [GeneticComputer,None,None]),#create_genetic_comp(pathBase = GEN_PATHBASE)),#GeneticComputer),
-        "genetic_25": ("Ariel (G25-2)", [GeneticComputer,25,None]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25)),#GeneticComputer25),
-        "genetic_d5": ("Caliban (G50-5)", [GeneticComputer,None,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,depth=5)),#GeneticComputer5),
-        "genetic_25_d5": ("Stephano (G25-5)", [GeneticComputer,25,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25,depth=5)),#GeneticComputer25_5),
+        "genetic": ("Prospero (G50-2)", [GeneticComputer,None,None]),
+        "genetic_25": ("Ariel (G25-2)", [GeneticComputer,25,None]),
+        "genetic_d1": ("Aeolus (G50-1)", [GeneticComputer,None,1]),
+        "genetic_d5": ("Caliban (G50-5)", [GeneticComputer,None,5]),
+        "genetic_25_d5": ("Stephano (G25-5)", [GeneticComputer,25,5]),
 
         "supervised": ("Horatio (SL)", SupervisedComputer),
         "minimax-2": ("Hotspur (MM-2)", lambda g, c: create_minimax_computer(g, c, depth=2)),
         "minimax-4": ("Henry V (MM-4)", lambda g, c: create_minimax_computer(g, c, depth=4)),
         "minimax-6": ("Octavius (MM-6)", lambda g, c: create_minimax_computer(g, c, depth=6)),
     }
+    AI_MODES.update(discover_dqn_checkpoints())
 
 
     TESTING_ML = False

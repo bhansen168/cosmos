@@ -7,14 +7,15 @@ from collections import deque
 import torch.nn.functional as F
 import numpy as np
 from datetime import datetime,timedelta
+import optuna
 
 sys.path.append(os.getcwd())
 from game import Game
 from computer import Computer,create_genetic_computer
 
 MUTE_PRINTS = True
-EPOCHS = 10000
-VERSION = "v03"
+EPOCHS = 1000
+VERSION = "v02"
 
 def predict_finish(start,amtCompleted):
     #start is datetime from start, amtCompleted is 0-1 decimal
@@ -58,7 +59,7 @@ class ReplayBuffer:
 
 
 class Agent:
-    def __init__(self, stateDim, actionDim, lr=1e-3, gamma=0.99, hidden_size=128):
+    def __init__(self, stateDim, actionDim, lr=1e-3, gamma=0.95, hidden_size=128):
         self.actionDim = actionDim
         self.gamma = gamma
         
@@ -254,16 +255,17 @@ class OpponentPool:
         self.past_versions.append(agent_state_dict)
         
     def select_opponent(self, episode, total_episodes):
-        # Fixed distribution: 50% genetic, 25% latest self, 25% historical
+        # Fixed distribution: 50% genetic, 20% latest self, 20% historic self, 10% random
         roll = random.random()
         if roll < 0.50:
             return "GENETIC"
-        elif roll < 0.75:
+        elif roll < 0.70:
             return "LATEST_SELF"
-        else:
+        elif roll < 0.90:
             if self.past_versions:
                 return random.choice(self.past_versions)
-            return "GENETIC"  # fallback if no history yet
+            return "LATEST_SELF"  # fallback if no history yet
+        return "RANDOM"
 
 def index_to_coord(action_idx):
     if isinstance(action_idx,tuple): #already formatted correctly
@@ -277,6 +279,32 @@ def index_to_coord(action_idx):
 
 def coord_to_index(y, x):
     return y * 8 + x
+
+
+def is_edge_move(action_idx):
+    """True if action lands on an edge square (not a corner)."""
+    y, x = index_to_coord(action_idx)
+    on_border = (x == 0 or x == 7 or y == 0 or y == 7)
+    on_corner = (x in (0, 7) and y in (0, 7))
+    return on_border and not on_corner
+
+
+def is_corner_move(action_idx):
+    """True if action lands on a corner square."""
+    y, x = index_to_coord(action_idx)
+    return x in (0, 7) and y in (0, 7)
+
+
+def move_reward(action_idx, edge_bonus, corner_bonus):
+    """Intermediate reward for a single placement on edge/corner."""
+    if action_idx is None:
+        return 0.0
+    r = 0.0
+    if is_edge_move(action_idx):
+        r += edge_bonus
+    if is_corner_move(action_idx):
+        r += corner_bonus
+    return r
 
 
 
@@ -367,6 +395,7 @@ class OthelloEnv(Game):
             info: A dictionary containing extra metadata (optional).
         """
         self.board = [[0 for _ in range(self.side)] for _ in range(self.side)]
+        self.current_player = 1
         self._set_middle()
 
         return self._flatten(),{}
@@ -393,24 +422,19 @@ class OthelloEnv(Game):
 
         self.current_player = (Game.WHITE if self.current_player == Game.BLACK else Game.BLACK)
         if len(self.get_all_legal_moves(self.current_player))==0:
-            #no legal moves
+            # Opponent can't move; switch back
             self.current_player = (Game.WHITE if self.current_player == Game.BLACK else Game.BLACK)
-
-        if len(self.get_all_legal_moves(Game.WHITE if self.current_player == Game.BLACK else Game.BLACK)) == 0:
-            gameOver = True
+            # Game over only if NEITHER player can move
+            if len(self.get_all_legal_moves(self.current_player)) == 0:
+                gameOver = True
 
         if self.check_game_over():
             gameOver = True
         
         
-        # Reward for taking edges/corners, penalty for giving opponent access
-        edge_reward = (1 if (x == 0 or x == 7 or y == 0 or y == 7) else 0) * 0.02
-        corner_reward = (1 if ((x == 0 or x == 7) and (y == 0 or y == 7)) else 0) * 0.04
-        
-        opp_edge, opp_corner = self._count_opponent_square_access(Game.WHITE if self.current_player == Game.BLACK else Game.BLACK)
-        opp_penalty = opp_edge * 0.02 + opp_corner * 0.04
-        
-        reward = edge_reward + corner_reward - opp_penalty
+        # No intermediate rewards — only terminal rewards for Othello.
+        # Edge/corner shaping with γ=0.99 inflates Q-values across ~30 moves.
+        reward = 0.0
         truncated = False
         
         return self._flatten(),reward,gameOver,truncated,{}
@@ -438,15 +462,19 @@ class OthelloEnv(Game):
         '''
         
 
-    def get_player_reward(self, player_id):
+    def get_player_reward(self, player_id, marginal_bonus=1.0):
         """
         Evaluates the endgame state.
-        Returns:
-            reward (float): e.g., +1.0 if player_id won, -1.0 if they lost, 0.0 for a draw.
+        Base reward is always ±1 for win/loss.  `marginal_bonus` scales the
+        extra margin component so that 64-0 earns more than 33-31.
         """
         scores = self.get_score()
-        vals = list(scores.values())
-        return scores[player_id]/32-1
+        score = scores[player_id]
+        if score > 32:
+            return 1.0 + marginal_bonus * (score - 32) / 32
+        if score < 32:
+            return -(1.0 + marginal_bonus * (32 - score) / 32)
+        return 0.0
 
     def print_board(self): #for debugging
         string = ""
@@ -520,166 +548,370 @@ def find_latest_checkpoint(checkpoint_folder, model_folder, version=VERSION):
     return latest_path, latest_ep
 
 
-if __name__ == "__main__":
+def train_with_params(params, n_episodes=500, verbose=False):
+    """Train a DQN agent with the given hyperparameters.
+
+    Returns the average terminal reward over the last 100 episodes.
+    """
     env = OthelloEnv()
-
-    CHECKPOINT_FOLDER = os.getcwd()+"/models/checkpoints"
-    MODEL_FOLDER = os.getcwd()+"/models"
-
-    #memory
+    agent = Agent(env.state_dim, env.action_dim, lr=params['lr'], gamma=params['gamma'])
     memory = ReplayBuffer(capacity=20000)
-    batch_size = 64
-    
-    #training loop
     pool = OpponentPool()
-    genetic_bot = create_genetic_computer(env, Game.BLACK, os.getcwd()+"/models/genetic/latest.json", search_depth=3)
-    agent = Agent(env.state_dim,env.action_dim)
-    historical_agent = Agent(env.state_dim,env.action_dim)
 
-    num_episodes = EPOCHS
+    genetic_path = os.getcwd() + "/models/genetic_gen_0049_v2.json"
+    genetic_bot = None
+    if os.path.isfile(genetic_path):
+        genetic_bot = create_genetic_computer(env, Game.BLACK, genetic_path, search_depth=1)
 
-    # Resume from the latest checkpoint by default so progress is never lost.
-    RESUME_FROM_CHECKPOINT = True
-    resume_path, start_episode = (None, 0)
-    if RESUME_FROM_CHECKPOINT:
-        resume_path, start_episode = find_latest_checkpoint(CHECKPOINT_FOLDER, MODEL_FOLDER)
-    if resume_path is not None:
-        print(f"Resuming training from {resume_path} (episode {start_episode})")
-        ckpt = torch.load(resume_path, map_location="cpu", weights_only=True)
-        agent.policyNet.load_state_dict(ckpt)
-        agent.targetNet.load_state_dict(ckpt)
-        # Fast-forward the LR scheduler to the resumed step.
-        agent.scheduler.step(start_episode)
-    else:
-        print("No checkpoint found; starting training from scratch")
+    historical_agent = Agent(env.state_dim, env.action_dim)
 
-    total_episodes = start_episode + num_episodes
+    edge_bonus = params['edge_bonus']
+    corner_bonus = params['corner_bonus']
+    marginal_bonus = params['marginal_bonus']
 
     epsilon_decay = 0.9995
     min_epsilon = 0.01
-    epsilon = max(1.0 * (epsilon_decay ** start_episode), min_epsilon)
+    epsilon = 1.0
 
-    UPDATE = 100
-    SAV_FREQ = max(min(int(EPOCHS * 0.05),20000),1000)
+    recent_terminal_rewards = deque(maxlen=100)
 
-    # Search depth the DQN agent uses for its own moves during training.
-    # The DQN itself serves as the leaf-node evaluator (see dqn_minimax_select_action).
-    DQN_SEARCH_DEPTH = 2
+    for episode in range(n_episodes):
+        epsilon = max(epsilon * epsilon_decay, min_epsilon)
+        opponent_type = pool.select_opponent(episode, n_episodes)
+        state, _ = env.reset()
+        done = False
+        opp_penalty = 0.0
 
-    start = datetime.now()
+        while not done:
+            current_player = env.current_player
 
-    print("Started training at "+(str(start).split(".")[0]))
-
-    if not os.path.exists(CHECKPOINT_FOLDER):
-        os.mkdir(CHECKPOINT_FOLDER)
-
-    #models = os.listdir(os.getcwd()+"/models")
-
-    for episode in range(start_episode, total_episodes):
-        try:
-            epsilon = max(epsilon * epsilon_decay, min_epsilon)
-
-            
-            opponent_type = pool.select_opponent(episode, total_episodes)
-            state, _ = env.reset()
-            done = False
-            
-            while not done:
-                current_player = env.current_player
-                if not MUTE_PRINTS:
-                    input("PRESS ENTER FOR NEXT TURN: ")
-                
-                if current_player == agent.id:
-                    if not MUTE_PRINTS:
-                        print("model to move")
-                    
-                    
-                else:
-                    # Opponent plays based on the selected pool strategy
-                    if opponent_type == "LATEST_SELF":
-                        if not MUTE_PRINTS:
-                            print("opponent (self) to move")
-                        action = agent.select_action(state, env.get_legal_moves(), epsilon) # Exploit self
-                    elif opponent_type == "GENETIC":
-                        if not MUTE_PRINTS:
-                            print("opponent (genetic) to move")
+            if current_player != agent.id:
+                # Opponent plays
+                if opponent_type == "LATEST_SELF":
+                    opp_state = encode_state(env.board, env.current_player)
+                    action = agent.select_action(opp_state, env.get_legal_moves(), epsilon)
+                elif opponent_type == "GENETIC":
+                    if genetic_bot is not None:
                         xy = genetic_bot.pick_minimax(color=current_player, place=False)
-                        action = (xy[1], xy[0])  # (x, y) → (y, x) for env.step
+                        action = (xy[1], xy[0])
                     else:
-                        if not MUTE_PRINTS:
-                            print("opponent (historical) to move")
-                        # Load historical model weights temporarily for the turn
-                        historical_agent.policyNet.load_state_dict(opponent_type)
-                        action = historical_agent.select_action(state, env.get_legal_moves(), epsilon=0.0)
-                    next_state, reward, done, _, _ = env.step(action)
-                    state = next_state
+                        opp_state = encode_state(env.board, env.current_player)
+                        action = agent.select_action(opp_state, env.get_legal_moves(), epsilon=0.0)
+                elif opponent_type == "RANDOM":
+                    legal = env.get_legal_moves()
+                    valid = np.where(legal == 1)[0]
+                    action = random.choice(valid) if len(valid) > 0 else None
+                else:
+                    historical_agent.policyNet.load_state_dict(opponent_type)
+                    opp_state = encode_state(env.board, env.current_player)
+                    action = historical_agent.select_action(opp_state, env.get_legal_moves(), epsilon=0.0)
+
+                next_state, _, done, _, _ = env.step(action)
+                state = next_state
+
+                if action is not None:
+                    opp_penalty -= move_reward(action, edge_bonus, corner_bonus)
+
+            if done:
+                reward = env.get_player_reward(agent.id, marginal_bonus)
+
+            # Main Agent
+            try:
+                if len(env.get_all_legal_moves(env.current_player)) == 0:
+                    env.current_player = Game.WHITE if env.current_player == Game.BLACK else Game.BLACK
+                    if len(env.get_all_legal_moves(env.current_player)) == 0:
+                        done = True
+                    state = env._flatten()
+                    if done:
+                        reward = env.get_player_reward(agent.id, marginal_bonus)
+                    continue
+
+                action = agent.select_action(state, env.get_legal_moves(), epsilon)
+                next_state, _, done, _, _ = env.step(action)
+                next_state = encode_state(env.board, agent.id)
 
                 if done:
-                    reward = env.get_player_reward(agent.id) #end of game stuff
+                    reward = env.get_player_reward(agent.id, marginal_bonus)
+                else:
+                    reward = opp_penalty + move_reward(action, edge_bonus, corner_bonus)
+                    opp_penalty = 0.0
 
-                # Main Agent plays using minimax search (DQN as evaluator) with
-                # epsilon-greedy exploration, and collects gradients
-                try:
-                    if random.random() < epsilon:
-                        action = agent.select_action(state, env.get_legal_moves(), epsilon) # explore
-                    else:
-                        action = dqn_minimax_select_action(agent, env, env.current_player, depth=DQN_SEARCH_DEPTH) # exploit via minimax
-                        if action is None:
-                            # Agent has no legal move; the environment handles the
-                            # pass on the next step, so refresh state and continue.
-                            state = env._flatten()
-                            continue
-                    next_state, reward, done, _, _ = env.step(action)
+                memory.push(state, action, reward, next_state, done)
+                state = next_state
+            except IndexError:
+                pass
 
-                    # (Store in Replay Buffer...)
+        # Track terminal reward for evaluation
+        terminal_reward = env.get_player_reward(agent.id, marginal_bonus)
+        recent_terminal_rewards.append(terminal_reward)
+
+        optimize(agent, memory, 64)
+        agent.scheduler.step()
+
+        # Polyak averaging
+        tau = 0.005
+        for target_param, policy_param in zip(agent.targetNet.parameters(), agent.policyNet.parameters()):
+            target_param.data.copy_(tau * policy_param.data + (1 - tau) * target_param.data)
+
+        if episode > 0 and episode % 500 == 0:
+            pool.add_checkpoint(agent.policyNet.state_dict())
+
+        if verbose and episode % 50 == 0:
+            avg = np.mean(recent_terminal_rewards) if recent_terminal_rewards else 0
+            print(f"  Ep {episode}: avg_reward={avg:.3f}  eps={epsilon:.3f}")
+
+    return float(np.mean(recent_terminal_rewards)) if recent_terminal_rewards else 0.0
+
+
+def evaluate(agent, env, n_games=100):
+    """Play n_games vs random opponent with greedy policy. Returns (wins, losses, draws)."""
+    wins = losses = draws = 0
+    for _ in range(n_games):
+        state, _ = env.reset()
+        done = False
+        while not done:
+            if env.current_player == agent.id:
+                legal = env.get_legal_moves()
+                if len(np.where(legal == 1)[0]) == 0:
+                    env.current_player = Game.WHITE if env.current_player == Game.BLACK else Game.BLACK
+                    if len(env.get_all_legal_moves(env.current_player)) == 0:
+                        done = True
+                    continue
+                action = agent.select_action(state, legal, epsilon=0.0)
+                next_state, _, done, _, _ = env.step(action)
+                state = encode_state(env.board, agent.id)
+            else:
+                legal = env.get_legal_moves()
+                valid = np.where(legal == 1)[0]
+                if len(valid) == 0:
+                    env.current_player = Game.WHITE if env.current_player == Game.BLACK else Game.BLACK
+                    if len(env.get_all_legal_moves(env.current_player)) == 0:
+                        done = True
+                    continue
+                action = random.choice(valid)
+                next_state, _, done, _, _ = env.step(action)
+                state = encode_state(env.board, agent.id)
+        scores = env.get_score()
+        if scores[agent.id] > scores[1 if agent.id == 2 else 2]:
+            wins += 1
+        elif scores[agent.id] < scores[1 if agent.id == 2 else 2]:
+            losses += 1
+        else:
+            draws += 1
+    return wins, losses, draws
+
+
+if __name__ == "__main__":
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    if "--optimize" in sys.argv:
+        # ── Hyperparameter optimization ──────────────────────────────────
+        EPIS_PER_TRIAL = 300
+        N_TRIALS = 30
+
+        def objective(trial):
+            params = {
+                'gamma':           trial.suggest_float('gamma', 0.90, 0.99),
+                'lr':              trial.suggest_float('lr', 1e-4, 1e-2, log=True),
+                'marginal_bonus':  trial.suggest_float('marginal_bonus', 0.0, 2.0),
+                'edge_bonus':      trial.suggest_float('edge_bonus', 0.0, 0.5),
+                'corner_bonus':    trial.suggest_float('corner_bonus', 0.0, 1.0),
+            }
+            try:
+                score = train_with_params(params, n_episodes=EPIS_PER_TRIAL, verbose=True)
+            except KeyboardInterrupt:
+                raise
+            return score
+
+        def progress_callback(study, trial):
+            best = study.best_trial.value if study.best_trial else None
+            best_str = f"{best:.4f}" if best is not None else "n/a"
+            print(f"  Trial {trial.number+1:>3}/{N_TRIALS}  "
+                  f"score={trial.value:.4f}  "
+                  f"best={best_str}  "
+                  f"params={trial.params}")
+
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=N_TRIALS, callbacks=[progress_callback])
+
+        print("\n═══════════════════════════════════════════")
+        print("  BEST TRIAL")
+        print("═══════════════════════════════════════════")
+        print(f"  Value (avg terminal reward): {study.best_trial.value:.4f}")
+        for k, v in study.best_trial.params.items():
+            print(f"  {k:20s}: {v}")
+        print("═══════════════════════════════════════════")
+    else:
+        # ── Normal training (with edge/corner & marginal bonuses) ────────
+        params = {
+            'gamma':          0.9,
+            'lr':             0.0005,
+            'marginal_bonus': 0.2936,
+            'edge_bonus':     0.03,
+            'corner_bonus':   0.08,
+        }
+
+        env = OthelloEnv()
+        CHECKPOINT_FOLDER = os.getcwd() + "/models/checkpoints"
+        MODEL_FOLDER = os.getcwd() + "/models"
+
+        memory = ReplayBuffer(capacity=20000)
+        batch_size = 64
+
+        pool = OpponentPool()
+        genetic_path = os.getcwd() + "/models/genetic_gen_0049_v2.json"
+        if os.path.isfile(genetic_path):
+            genetic_bot = create_genetic_computer(env, Game.BLACK, genetic_path, search_depth=1)
+        else:
+            print(f"Genetic checkpoint not found at {genetic_path}; disabling GENETIC opponent")
+            genetic_bot = None
+        agent = Agent(env.state_dim, env.action_dim, lr=params['lr'], gamma=params['gamma'])
+        historical_agent = Agent(env.state_dim, env.action_dim)
+
+        edge_bonus = params['edge_bonus']
+        corner_bonus = params['corner_bonus']
+        marginal_bonus = params['marginal_bonus']
+
+        num_episodes = EPOCHS
+
+        RESUME_FROM_CHECKPOINT = True
+        resume_path, start_episode = (None, 0)
+        if RESUME_FROM_CHECKPOINT:
+            resume_path, start_episode = find_latest_checkpoint(CHECKPOINT_FOLDER, MODEL_FOLDER)
+        if resume_path is not None:
+            print(f"Resuming training from {resume_path} (episode {start_episode})")
+            ckpt = torch.load(resume_path, map_location="cpu", weights_only=True)
+            agent.policyNet.load_state_dict(ckpt)
+            agent.targetNet.load_state_dict(ckpt)
+            agent.scheduler.step(start_episode)
+        else:
+            print("No checkpoint found; starting training from scratch")
+
+        total_episodes = start_episode + num_episodes
+
+        epsilon_decay = 0.9995
+        min_epsilon = 0.01
+        epsilon = max(1.0 * (epsilon_decay ** start_episode), min_epsilon)
+
+        UPDATE = 100
+        SAV_FREQ = max(min(int(EPOCHS * 0.05), 20000), 1000)
+
+        start = datetime.now()
+        print("Started training at " + str(start).split(".")[0])
+
+        if not os.path.exists(CHECKPOINT_FOLDER):
+            os.mkdir(CHECKPOINT_FOLDER)
+
+        for episode in range(start_episode, total_episodes):
+            try:
+                epsilon = max(epsilon * epsilon_decay, min_epsilon)
+                opponent_type = pool.select_opponent(episode, total_episodes)
+                state, _ = env.reset()
+                done = False
+                opp_penalty = 0.0
+
+                while not done:
+                    current_player = env.current_player
+                    if not MUTE_PRINTS:
+                        input("PRESS ENTER FOR NEXT TURN: ")
+
+                    if current_player != agent.id:
+                        # Opponent plays
+                        if opponent_type == "LATEST_SELF":
+                            if not MUTE_PRINTS:
+                                print("opponent (self) to move")
+                            opp_state = encode_state(env.board, env.current_player)
+                            action = agent.select_action(opp_state, env.get_legal_moves(), epsilon)
+                        elif opponent_type == "GENETIC":
+                            if genetic_bot is not None:
+                                if not MUTE_PRINTS:
+                                    print("opponent (genetic) to move")
+                                xy = genetic_bot.pick_minimax(color=current_player, place=False)
+                                action = (xy[1], xy[0])
+                            else:
+                                if not MUTE_PRINTS:
+                                    print("opponent (self, greedy) to move")
+                                opp_state = encode_state(env.board, env.current_player)
+                                action = agent.select_action(opp_state, env.get_legal_moves(), epsilon=0.0)
+                        elif opponent_type == "RANDOM":
+                            if not MUTE_PRINTS:
+                                print("opponent (random) to move")
+                            legal = env.get_legal_moves()
+                            valid = np.where(legal == 1)[0]
+                            action = random.choice(valid) if len(valid) > 0 else None
+                        else:
+                            if not MUTE_PRINTS:
+                                print("opponent (historical) to move")
+                            historical_agent.policyNet.load_state_dict(opponent_type)
+                            opp_state = encode_state(env.board, env.current_player)
+                            action = historical_agent.select_action(opp_state, env.get_legal_moves(), epsilon=0.0)
+
+                        next_state, _, done, _, _ = env.step(action)
+                        state = next_state
+
+                        if action is not None:
+                            opp_penalty -= move_reward(action, edge_bonus, corner_bonus)
+
                     if done:
-                        reward = env.get_player_reward(agent.id)
-                        
-                    memory.push(state, action, reward, next_state, done)
-                    state = next_state
-                except IndexError as e:
-                    #game over, but didn't break like was supposed to.
-                    #print("TESTdone:",done) -- True -- means Done function works properly
-                    pass
-                    
-                
-                # 3. CRITICAL ADDITION: Run the optimizer optimization steps
+                        reward = env.get_player_reward(agent.id, marginal_bonus)
+
+                    # Main Agent
+                    try:
+                        if len(env.get_all_legal_moves(env.current_player)) == 0:
+                            env.current_player = Game.WHITE if env.current_player == Game.BLACK else Game.BLACK
+                            if len(env.get_all_legal_moves(env.current_player)) == 0:
+                                done = True
+                            state = env._flatten()
+                            if done:
+                                reward = env.get_player_reward(agent.id, marginal_bonus)
+                            continue
+
+                        action = agent.select_action(state, env.get_legal_moves(), epsilon)
+                        next_state, _, done, _, _ = env.step(action)
+                        next_state = encode_state(env.board, agent.id)
+
+                        if done:
+                            reward = env.get_player_reward(agent.id, marginal_bonus)
+                        else:
+                            reward = opp_penalty + move_reward(action, edge_bonus, corner_bonus)
+                            opp_penalty = 0.0
+
+                        memory.push(state, action, reward, next_state, done)
+                        state = next_state
+                    except IndexError:
+                        pass
+
                 optimize(agent, memory, batch_size)
-                    
-
-                # Step LR scheduler per episode
                 agent.scheduler.step()
-                    
-            # Update target network every 100 episodes (not every episode)
-            if episode % 100 == 0:
-                agent.targetNet.load_state_dict(agent.policyNet.state_dict())
-                    
-            # Every 500 episodes, snapshot the agent and add it to the pool
-            if episode>0:
-                if episode % 500 == 0:
-                    pool.add_checkpoint(agent.policyNet.state_dict())
-                if episode % SAV_FREQ == 0:
-                    path = f"{CHECKPOINT_FOLDER}/othello_{VERSION}_{round(episode/1000,1)}k-sav.pth"
-                    torch.save(agent.policyNet.state_dict(), path)
-                    print(f"Saved checkpoint at \"{path}\"; timestamp: {str(datetime.now()).split('.')[0]}")
-            
-                if (episode%UPDATE ==UPDATE-1):
-                    perc = (episode+1)/total_episodes
-                    print(f"FINISHED EPISODE {episode+1} OF {total_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start,perc)}")
-        except KeyboardInterrupt as e:
-            path = f"{MODEL_FOLDER}/othello_{VERSION}_{episode//1000}k_ABORTED.pth"
-            torch.save(agent.policyNet.state_dict(), path)
-            print(f"Aborted; saved at \"{path}\"")
-            raise e
 
+                tau = 0.005
+                for target_param, policy_param in zip(agent.targetNet.parameters(), agent.policyNet.parameters()):
+                    target_param.data.copy_(tau * policy_param.data + (1 - tau) * target_param.data)
 
+                if episode > 0:
+                    if episode % 500 == 0:
+                        pool.add_checkpoint(agent.policyNet.state_dict())
+                    if episode % SAV_FREQ == 0:
+                        path = f"{CHECKPOINT_FOLDER}/othello_{VERSION}_{round(episode/1000,1)}k-sav.pth"
+                        torch.save(agent.policyNet.state_dict(), path)
+                        print(f"Saved checkpoint at \"{path}\"; timestamp: {str(datetime.now()).split('.')[0]}")
+                    if (episode % UPDATE == UPDATE - 1):
+                        perc = (episode + 1) / total_episodes
+                        print(f"FINISHED EPISODE {episode+1} OF {total_episodes} -- {round(perc * 100,2)}% -- ends at {predict_finish(start, perc)}")
+                    if episode % 1000 == 0:
+                        w, l, d = evaluate(agent, env, n_games=100)
+                        print(f"EVAL vs random: {w}/{l}/{d}  win_rate={100*w/(w+l or 1):.1f}%")
+            except KeyboardInterrupt as e:
+                path = f"{MODEL_FOLDER}/othello_{VERSION}_{episode//1000}k_ABORTED.pth"
+                torch.save(agent.policyNet.state_dict(), path)
+                print(f"Aborted; saved at \"{path}\"")
+                raise e
 
-    path = f"{MODEL_FOLDER}/othello_{VERSION}_{total_episodes//1000}k.pth"
-    torch.save(agent.policyNet.state_dict(), path)
-    print(f"Saved final version at \"{path}\"")
+        path = f"{MODEL_FOLDER}/othello_{VERSION}_{total_episodes//1000}k.pth"
+        torch.save(agent.policyNet.state_dict(), path)
+        print(f"Saved final version at \"{path}\"")
 
-    #os.remove(CHECKPOINT_FOLDER)
-    for file in os.listdir(CHECKPOINT_FOLDER):
-        os.remove(os.path.join(CHECKPOINT_FOLDER,file))
+        for file in os.listdir(CHECKPOINT_FOLDER):
+            os.remove(os.path.join(CHECKPOINT_FOLDER, file))
         
         
