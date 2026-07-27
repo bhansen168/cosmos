@@ -22,7 +22,7 @@ AlphaZero model is selected.
 
 from __future__ import annotations
 
-import argparse
+import argparse,os
 import random
 import sys
 import time
@@ -185,10 +185,13 @@ def latest_dqn_checkpoint() -> Path:
 
 
 def latest_bard_checkpoint() -> Path:
+    """
     return _newest_checkpoint(
         list(MODELS_DIRECTORY.rglob("*.bard")),
         "Bard",
     )
+    """
+    return Path(os.getcwd()+"/models/synthprune-0.5-20260723144438.bard")
 
 
 def latest_genetic_checkpoint() -> Path:
