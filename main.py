@@ -10,7 +10,14 @@ from copy import deepcopy
 sys.path.append(os.getcwd())
 from game import Game
 from computer import ComputerDQN,ComputerDQNMinimax,ComputerSupervised as SupervisedComputer,create_minimax_computer,GeneticComputer#create_genetic_comp#ComputerGen as GeneticComputer,ComputerGen25 as GeneticComputer25,create_minimax_computer,GeneticComputer5 = computer2_module.Computer6,GeneticComputer25_5 = computer2_module.Computer7
-
+from computer import (
+    ComputerAlphaZero,
+    ComputerDQN,
+    ComputerPPO,
+    ComputerSupervised as SupervisedComputer,
+    GeneticComputer,
+    create_minimax_computer,
+)
 def latest_dqn_checkpoint(folder="models/checkpoints", version="v02"):
     """Return the path to the highest-episode DQN checkpoint in `folder`."""
     pat = re.compile(rf"othello_{re.escape(version)}_(\d+(?:\.\d+)?)k-sav\.pth$")
@@ -49,6 +56,7 @@ def discover_dqn_checkpoints(folder="models/checkpoints", version="v02"):
     return modes
 
 
+
 class Main:
     GREEN = (34,139,34)
     BLACK = (0,0,0)
@@ -64,11 +72,21 @@ class Main:
     GEN_PATHBASE = os.getcwd()+"\\models"
     
     AI_MODES = {
+<<<<<<< HEAD
         "genetic": ("Prospero (G50-2)", [GeneticComputer,None,None]),
         "genetic_25": ("Ariel (G25-2)", [GeneticComputer,25,None]),
         "genetic_d1": ("Aeolus (G50-1)", [GeneticComputer,None,1]),
         "genetic_d5": ("Caliban (G50-5)", [GeneticComputer,None,5]),
         "genetic_25_d5": ("Stephano (G25-5)", [GeneticComputer,25,5]),
+=======
+        "dqn": ("Hamlet (DQN)", ComputerDQN),
+        "ppo": ("Macbeth (PPO-2)", ComputerPPO),
+        "alphazero": ("King Lear (AZ-512)", ComputerAlphaZero),
+        "genetic": ("Prospero (G50-2)", [GeneticComputer,None,None]),#create_genetic_comp(pathBase = GEN_PATHBASE)),#GeneticComputer),
+        "genetic_25": ("Ariel (G25-2)", [GeneticComputer,25,None]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25)),#GeneticComputer25),
+        "genetic_d5": ("Caliban (G50-5)", [GeneticComputer,None,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,depth=5)),#GeneticComputer5),
+        "genetic_25_d5": ("Stephano (G25-5)", [GeneticComputer,25,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25,depth=5)),#GeneticComputer25_5),
+>>>>>>> c421ac61c3ba1b54ebf9d226e77e39bd24e31697
 
         "supervised": ("Horatio (SL)", SupervisedComputer),
         "minimax-2": ("Hotspur (MM-2)", lambda g, c: create_minimax_computer(g, c, depth=2)),
@@ -494,7 +512,8 @@ class Main:
         
 if __name__ == "__main__":
 
-    GAME_MODE = "genetic"  # Options: dqn, genetic, supervised, minimax, player -- default
+    # Options include AlphaZero, PPO, DQN, genetic, supervised, minimax, and PvP.
+    GAME_MODE = "genetic"
 
     AI_COLOR = ""#"B" #choices: "B","W",[anything else]
     

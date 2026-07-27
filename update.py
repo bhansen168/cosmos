@@ -4,7 +4,17 @@ import os,shutil
 Copies over
 """
 
-webDependencies = ["computer.py","computer_supervised.py","computerRL.py","game.py","genetic_model.py","main.py","minimax_model.py","othello_engine.py"]
+webDependencies = [
+    "computer.py",
+    "computer_supervised.py",
+    "computerRL.py",
+    "game.py",
+    "genetic_model.py",
+    "main.py",
+    "minimax_model.py",
+    "othello_engine.py",
+    "ppo_model.py",
+]
 
 
 files = os.listdir(os.getcwd()+"/web")

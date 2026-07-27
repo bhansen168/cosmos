@@ -10,9 +10,11 @@ Run without arguments for an interactive model picker, or pass model specs:
     python benchmark_models.py --player-1 greedy \
         --player-2 models/v1/othello_100k.pth --games 100
     python benchmark_models.py --player-1 bard --player-2 greedy --games 100
+    python benchmark_models.py --player-1 alphazero --player-2 minimax:4 --games 20
 
 The program is independent of the Pygame game loop, so benchmarks can run
-without opening a window. PyTorch is imported only when a DQN is selected.
+without opening a window. PyTorch is imported only when a neural model is
+selected.
 """
 
 from __future__ import annotations
@@ -44,7 +46,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 MODELS_DIRECTORY = PROJECT_ROOT / "models"
 GENETIC_MODELS_DIRECTORY = MODELS_DIRECTORY / "genetic"
 DEFAULT_BARD_CHECKPOINT = MODELS_DIRECTORY / "supervised" / "wthor-kaggle.bard"
+PPO_MODELS_DIRECTORY = MODELS_DIRECTORY / "ppo"
+ALPHAZERO_MODELS_DIRECTORY = MODELS_DIRECTORY / "alphazero"
+
 BENCHMARK_MINIMAX_DEPTHS = (1, 2, 3, 4, 5, 6)
+
+
 
 
 class DQNPlayer:
@@ -147,48 +154,128 @@ class MatchStats:
         else:
             self.wins_as_white[result.winner] += 1
 
+def _relative_label(checkpoint: Path) -> str:
+    try:
+        return str(checkpoint.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(checkpoint)
+
+def _newest_checkpoint(candidates: Sequence[Path], model_name: str) -> Path:
+    existing: list[Path] = []
+    for checkpoint in candidates:
+        try:
+            if checkpoint.is_file():
+                existing.append(checkpoint)
+        except OSError:
+            continue
+    if not existing:
+        raise ValueError(
+            f"No {model_name} checkpoints found under {MODELS_DIRECTORY}"
+        )
+
+    def freshness(checkpoint: Path) -> tuple[int, str]:
+        try:
+            modified = checkpoint.stat().st_mtime_ns
+        except OSError:
+            modified = 0
+        return modified, checkpoint.as_posix().casefold()
+
+    return max(existing, key=freshness)
+
+
+def latest_dqn_checkpoint() -> Path:
+    completed = [
+        checkpoint
+        for checkpoint in MODELS_DIRECTORY.rglob("*.pth")
+        if "aborted" not in checkpoint.name.casefold()
+    ]
+    return _newest_checkpoint(completed, "DQN")
+
+def latest_bard_checkpoint() -> Path:
+    return _newest_checkpoint(
+        list(MODELS_DIRECTORY.rglob("*.bard")),
+        "Bard",
+    )
+
+
+def latest_genetic_checkpoint() -> Path:
+    # Genetic v2 also has legacy runs directly under models/.
+    search_directories = (GENETIC_MODELS_DIRECTORY, MODELS_DIRECTORY)
+    latest_files = [
+        checkpoint
+        for directory in search_directories
+        for checkpoint in directory.glob("latest*.json")
+    ]
+    candidates = latest_files or [
+        checkpoint
+        for directory in search_directories
+        for checkpoint in directory.glob("genetic_gen_*.json")
+    ]
+    return _newest_checkpoint(candidates, "genetic")
+
+
+def latest_ppo_checkpoint() -> Path:
+    # Older trainer versions wrote directly under models/. Keep those runs
+    # discoverable while preferring whichever latest checkpoint is newest.
+    search_directories = (PPO_MODELS_DIRECTORY, MODELS_DIRECTORY)
+    latest_files = [
+        checkpoint
+        for directory in search_directories
+        for checkpoint in directory.glob("latest*.ppo")
+    ]
+    candidates = latest_files or [
+        checkpoint
+        for directory in search_directories
+        for checkpoint in directory.glob("*.ppo")
+        if checkpoint.name.casefold() != "best.ppo"
+    ]
+    return _newest_checkpoint(candidates, "PPO")
+
+
+def latest_alphazero_checkpoint() -> Path:
+    champion = ALPHAZERO_MODELS_DIRECTORY / "best.az"
+    if champion.is_file():
+        return champion
+
+    search_directories = (ALPHAZERO_MODELS_DIRECTORY, MODELS_DIRECTORY)
+    latest_files = [
+        checkpoint
+        for directory in search_directories
+        for checkpoint in directory.glob("latest*.az")
+    ]
+    candidates = latest_files or list(MODELS_DIRECTORY.rglob("*.az"))
+    return _newest_checkpoint(candidates, "AlphaZero")
+
 
 def discover_models() -> list[ModelOption]:
     options = [
         ModelOption("random", "Random"),
         ModelOption("greedy", "Greedy"),
+        ModelOption(
+            "minimax",
+            f"Minimax with alpha-beta pruning (depth {DEFAULT_MINIMAX_DEPTH})",
+        ),
     ]
 
-    for depth in BENCHMARK_MINIMAX_DEPTHS:
-        spec = "minimax" if depth == DEFAULT_MINIMAX_DEPTH else f"minimax:{depth}"
-        default_label = " — default" if depth == DEFAULT_MINIMAX_DEPTH else ""
+    learned_models = (
+        ("dqn", "DQN", latest_dqn_checkpoint),
+        ("bard", "Bard supervised", latest_bard_checkpoint),
+        ("genetic", "Genetic", latest_genetic_checkpoint),
+        ("ppo", "PPO", latest_ppo_checkpoint),
+        ("alphazero", "AlphaZero", latest_alphazero_checkpoint),
+    )
+    for spec, label, resolver in learned_models:
+        try:
+            checkpoint = resolver()
+        except ValueError:
+            continue
+        selection = "default" if spec == "alphazero" else "latest"
         options.append(
             ModelOption(
                 spec,
-                f"Minimax with alpha-beta pruning (depth {depth}){default_label}",
+                f"{label} ({selection}: {_relative_label(checkpoint)})",
             )
         )
-
-    if MODELS_DIRECTORY.exists():
-        for checkpoint in sorted(MODELS_DIRECTORY.rglob("*.bard")):
-            relative = checkpoint.relative_to(PROJECT_ROOT)
-            is_default = checkpoint.resolve() == DEFAULT_BARD_CHECKPOINT.resolve()
-            spec = "bard" if is_default else f"bard:{relative}"
-            default_label = " — default" if is_default else ""
-            options.append(
-                ModelOption(
-                    spec,
-                    f"Bard supervised: {relative}{default_label}",
-                )
-            )
-
-        for checkpoint in sorted(MODELS_DIRECTORY.rglob("*.pth")):
-            relative = checkpoint.relative_to(PROJECT_ROOT)
-            options.append(ModelOption(str(relative), f"DQN: {relative}"))
-
-    if GENETIC_MODELS_DIRECTORY.exists():
-        for checkpoint in sorted(
-            GENETIC_MODELS_DIRECTORY.rglob("genetic_gen_*.json")
-        ):
-            relative = checkpoint.relative_to(PROJECT_ROOT)
-            options.append(
-                ModelOption(f"genetic:{relative}", f"Genetic: {relative}")
-            )
 
     return options
 
@@ -233,46 +320,57 @@ def normalize_checkpoint(raw_spec: str) -> Path:
     if not checkpoint.is_absolute():
         checkpoint = PROJECT_ROOT / checkpoint
     if not checkpoint.is_file():
-        raise ValueError(f"DQN checkpoint not found: {checkpoint}")
+        raise ValueError(f"DQN checkpoint not found: {checkpoint}") #raises this 
     if checkpoint.suffix.lower() != ".pth":
         raise ValueError(f"DQN checkpoint must be a .pth file: {checkpoint}")
     return checkpoint
 
-
 def normalize_genetic_checkpoint(raw_spec: str) -> Path:
-    lowered = raw_spec.lower()
+    stripped = raw_spec.strip()
+    lowered = stripped.lower()
+    if lowered in ("genetic", "ga"):
+        return latest_genetic_checkpoint()
     if lowered.startswith("genetic:"):
-        spec = raw_spec[len("genetic:") :]
+        spec = stripped[len("genetic:") :]
     elif lowered.startswith("ga:"):
-        spec = raw_spec[len("ga:") :]
+        spec = stripped[len("ga:") :]
     else:
-        spec = raw_spec
+        spec = stripped
+    return _normalize_explicit_checkpoint(spec, "Genetic", ".json")
 
-    checkpoint = Path(spec).expanduser()
-    if not checkpoint.is_absolute():
-        checkpoint = PROJECT_ROOT / checkpoint
-    if not checkpoint.is_file():
-        raise ValueError(f"Genetic checkpoint not found: {checkpoint}")
-    if checkpoint.suffix.lower() != ".json":
-        raise ValueError(f"Genetic checkpoint must be a .json file: {checkpoint}")
-    return checkpoint
+def normalize_ppo_checkpoint(raw_spec: str) -> Path:
+    stripped = raw_spec.strip()
+    lowered = stripped.lower()
+    if lowered == "ppo":
+        return latest_ppo_checkpoint()
+    if lowered.startswith("ppo:"):
+        spec = stripped[len("ppo:") :]
+    else:
+        spec = stripped
+    return _normalize_explicit_checkpoint(spec, "PPO", ".ppo")
+
+
+def normalize_alphazero_checkpoint(raw_spec: str) -> Path:
+    stripped = raw_spec.strip()
+    lowered = stripped.lower()
+    if lowered in ("alphazero", "az"):
+        return latest_alphazero_checkpoint()
+    if lowered.startswith("alphazero:"):
+        spec = stripped[len("alphazero:") :]
+    elif lowered.startswith("az:"):
+        spec = stripped[len("az:") :]
+    else:
+        spec = stripped
+    return _normalize_explicit_checkpoint(spec, "AlphaZero", ".az")
 
 
 def normalize_bard_checkpoint(raw_spec: str) -> Path:
-    lowered = raw_spec.lower()
+    stripped = raw_spec.strip()
+    lowered = stripped.lower()
     if lowered == "bard":
-        checkpoint = DEFAULT_BARD_CHECKPOINT
-    else:
-        spec = raw_spec[len("bard:") :] if lowered.startswith("bard:") else raw_spec
-        checkpoint = Path(spec).expanduser()
-        if not checkpoint.is_absolute():
-            checkpoint = PROJECT_ROOT / checkpoint
-    if not checkpoint.is_file():
-        raise ValueError(f"Bard checkpoint not found: {checkpoint}")
-    if checkpoint.suffix.lower() != ".bard":
-        raise ValueError(f"Bard checkpoint must be a .bard file: {checkpoint}")
-    return checkpoint
-
+        return latest_bard_checkpoint()
+    spec = stripped[len("bard:") :] if lowered.startswith("bard:") else stripped
+    return _normalize_explicit_checkpoint(spec, "Bard", ".bard")
 
 def build_player(spec: str) -> Player:
     stripped = spec.strip()
@@ -306,13 +404,61 @@ def build_player(spec: str) -> Player:
             ) from exc
         return ComputerSupervised(path=normalize_bard_checkpoint(stripped))
     if (
-        normalized.startswith("genetic:")
+        normalized in ("genetic", "ga")
+        or normalized.startswith("genetic:")
         or normalized.startswith("ga:")
         or normalized.endswith(".json")
     ):
         return GeneticPlayer.from_checkpoint(normalize_genetic_checkpoint(stripped))
-    return DQNPlayer(normalize_checkpoint(stripped))
-
+    if (
+        normalized == "ppo"
+        or normalized.startswith("ppo:")
+        or normalized.endswith(".ppo")
+    ):
+        try:
+            from ppo_model import PPOPlayer
+        except ImportError as exc:
+            raise RuntimeError(
+                "PPO checkpoints require PyTorch. Run the benchmark with the "
+                "same Python environment used to train PPO."
+            ) from exc
+        return PPOPlayer(
+            normalize_ppo_checkpoint(stripped),
+            search_depth=2,
+            endgame_exact_empties=8,
+        )
+    if (
+        normalized in ("alphazero", "az")
+        or normalized.startswith("alphazero:")
+        or normalized.startswith("az:")
+        or normalized.endswith(".az")
+    ):
+        try:
+            from alphazero.model import AlphaZeroPlayer
+        except ImportError as exc:
+            raise RuntimeError(
+                "AlphaZero checkpoints require PyTorch. Run this tool with the "
+                "same Python environment used to train AlphaZero."
+            ) from exc
+        return AlphaZeroPlayer(
+            normalize_alphazero_checkpoint(stripped),
+            simulations=512,
+            c_puct=1.5,
+            fpu_reduction=0.20,
+            leaf_batch_size=8,
+            virtual_loss=1.0,
+            exact_endgame_empties=10,
+        )
+    if (
+        normalized == "dqn"
+        or normalized.startswith("dqn:")
+        or normalized.endswith(".pth")
+    ):
+        return DQNPlayer(normalize_checkpoint(stripped))
+    raise ValueError(
+        f"Unknown model {stripped!r}; use random, greedy, minimax, dqn, bard, "
+        "genetic, ppo, alphazero, or an explicit checkpoint path"
+    )
 
 def play_game(
     players: tuple[Player, Player],
@@ -416,14 +562,15 @@ def print_results(
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare COSMOS random, greedy, minimax, Bard, genetic, and DQN "
-            "Othello players."
+            "Generate games with COSMOS random, greedy, minimax, learned, and "
+            "AlphaZero Othello players."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Model specs can be 'random', 'greedy', 'minimax', "
             "'minimax:DEPTH', 'bard', 'bard:PATH.bard', "
-            "'genetic:PATH.json', or a path to a .pth file.\n"
+            "'genetic:PATH.json', 'alphazero', 'alphazero:PATH.az', "
+            "or a path to a .pth file.\n"
             "Omit both players to use the interactive model picker."
         ),
     )
