@@ -414,7 +414,7 @@ def _relative_label(checkpoint: Path) -> str:
         return str(checkpoint)
 
 
-def discover_models() -> list[ModelOption]:
+def discover_models(historyAllowed = False) -> list[ModelOption]:
     options = [
         ModelOption("random", "Random"),
         ModelOption("greedy", "Greedy"),
@@ -444,7 +444,7 @@ def discover_models() -> list[ModelOption]:
             )
         )
 
-    if MODELS_DIRECTORY.exists():
+    if MODELS_DIRECTORY.exists() and historyAllowed:
         bard_checkpoints = sorted(MODELS_DIRECTORY.rglob("*.bard"))
         if bard_checkpoints:
             DEFAULT_BARD_CHECKPOINT = latest_bard_checkpoint()
@@ -485,6 +485,7 @@ def discover_models() -> list[ModelOption]:
             options.append(
                 ModelOption(f"genetic:{relative}:5", f"Genetic depth-5: {relative}")
             )
+
 
     return options
 
