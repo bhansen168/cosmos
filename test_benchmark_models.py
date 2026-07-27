@@ -29,10 +29,12 @@ from benchmark_models import (  # noqa: E402
     RandomPlayer,
     build_player,
     discover_models,
+    latest_alphazero_checkpoint,
     latest_bard_checkpoint,
     latest_dqn_checkpoint,
     latest_genetic_checkpoint,
     latest_ppo_checkpoint,
+    normalize_alphazero_checkpoint,
     normalize_bard_checkpoint,
     normalize_checkpoint,
     normalize_genetic_checkpoint,
@@ -43,10 +45,12 @@ from benchmark_models import (  # noqa: E402
 )
 from computer import (  # noqa: E402
     Computer,
+    ComputerAlphaZero,
     ComputerPPO,
     ComputerSupervised,
     RandomComputer,
     create_minimax_computer,
+    find_latest_alphazero_checkpoint,
 )
 from genetic_model import (  # noqa: E402
     CHECKPOINT_FORMAT,
@@ -137,8 +141,9 @@ class HeadlessRulesTests(unittest.TestCase):
 
 
 class MatchTests(unittest.TestCase):
-    def test_main_menu_exposes_ppo(self) -> None:
+    def test_main_menu_exposes_searched_neural_models(self) -> None:
         self.assertIs(Main.AI_MODES["ppo"][1], ComputerPPO)
+        self.assertIs(Main.AI_MODES["alphazero"][1], ComputerAlphaZero)
 
     def test_match_totals_and_color_alternation(self) -> None:
         stats, _ = run_match(
@@ -183,7 +188,11 @@ class MatchTests(unittest.TestCase):
         self.assertNotEqual(observed[0], observed[2])
 
     def test_checkpoint_discovery_lists_one_latest_model_per_family(self) -> None:
-        options = discover_models()
+        with mock.patch(
+            "benchmark_models.latest_alphazero_checkpoint",
+            return_value=Path("models/alphazero/latest.az"),
+        ):
+            options = discover_models()
         specs = [option.spec for option in options]
         self.assertEqual(
             specs,
@@ -195,10 +204,12 @@ class MatchTests(unittest.TestCase):
                 "bard",
                 "genetic",
                 "ppo",
+                "alphazero",
             ],
         )
         for option in options[3:]:
-            self.assertIn("latest:", option.label)
+            selection = "default:" if option.spec == "alphazero" else "latest:"
+            self.assertIn(selection, option.label)
 
     def test_learned_model_aliases_resolve_latest_checkpoints(self) -> None:
         dqn = normalize_checkpoint("dqn")
@@ -213,6 +224,151 @@ class MatchTests(unittest.TestCase):
             latest_genetic_checkpoint(),
         )
         self.assertEqual(normalize_ppo_checkpoint("ppo"), latest_ppo_checkpoint())
+        with mock.patch(
+            "benchmark_models.latest_alphazero_checkpoint",
+            return_value=Path("models/alphazero/latest.az"),
+        ):
+            self.assertEqual(
+                normalize_alphazero_checkpoint("az"),
+                Path("models/alphazero/latest.az"),
+            )
+
+    def test_alphazero_resolvers_prefer_promoted_champion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            models_directory = Path(temporary_directory)
+            alphazero_directory = models_directory / "alphazero"
+            snapshot_directory = alphazero_directory / "snapshots"
+            snapshot_directory.mkdir(parents=True)
+            best = alphazero_directory / "best.az"
+            latest = alphazero_directory / "latest.az"
+            snapshot = snapshot_directory / "alphazero_gen_00999.az"
+            best.write_bytes(b"promoted champion")
+            latest.write_bytes(b"latest")
+            snapshot.write_bytes(b"newer snapshot")
+            os.utime(best, (1, 1))
+            os.utime(latest, (1, 1))
+            os.utime(snapshot, (2, 2))
+
+            with (
+                mock.patch(
+                    "benchmark_models.MODELS_DIRECTORY",
+                    models_directory,
+                ),
+                mock.patch(
+                    "benchmark_models.ALPHAZERO_MODELS_DIRECTORY",
+                    alphazero_directory,
+                ),
+            ):
+                self.assertEqual(latest_alphazero_checkpoint(), best)
+            self.assertEqual(
+                find_latest_alphazero_checkpoint(models_directory),
+                best.resolve(),
+            )
+
+    def test_alphazero_resolvers_fall_back_to_latest_then_newest_other(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            models_directory = Path(temporary_directory)
+            alphazero_directory = models_directory / "alphazero"
+            snapshot_directory = alphazero_directory / "snapshots"
+            snapshot_directory.mkdir(parents=True)
+            latest = alphazero_directory / "latest.az"
+            snapshot = snapshot_directory / "alphazero_gen_00999.az"
+            latest.write_bytes(b"latest")
+            snapshot.write_bytes(b"newer snapshot")
+            os.utime(latest, (1, 1))
+            os.utime(snapshot, (2, 2))
+
+            with (
+                mock.patch(
+                    "benchmark_models.MODELS_DIRECTORY",
+                    models_directory,
+                ),
+                mock.patch(
+                    "benchmark_models.ALPHAZERO_MODELS_DIRECTORY",
+                    alphazero_directory,
+                ),
+            ):
+                self.assertEqual(latest_alphazero_checkpoint(), latest)
+            self.assertEqual(
+                find_latest_alphazero_checkpoint(models_directory),
+                latest.resolve(),
+            )
+
+            latest.unlink()
+            with (
+                mock.patch(
+                    "benchmark_models.MODELS_DIRECTORY",
+                    models_directory,
+                ),
+                mock.patch(
+                    "benchmark_models.ALPHAZERO_MODELS_DIRECTORY",
+                    alphazero_directory,
+                ),
+            ):
+                self.assertEqual(latest_alphazero_checkpoint(), snapshot)
+            self.assertEqual(
+                find_latest_alphazero_checkpoint(models_directory),
+                snapshot.resolve(),
+            )
+
+    def test_alphazero_alias_and_bound_computer_load_lazily(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            checkpoint = Path(temporary_directory) / "model.az"
+            checkpoint.write_bytes(b"test checkpoint")
+            fake_player = types.SimpleNamespace(name="AlphaZero test")
+            player_type = mock.Mock(return_value=fake_player)
+            fake_package = types.ModuleType("alphazero")
+            fake_package.__path__ = []
+            fake_model = types.ModuleType("alphazero.model")
+            fake_model.AlphaZeroPlayer = player_type
+            with mock.patch.dict(
+                sys.modules,
+                {
+                    "alphazero": fake_package,
+                    "alphazero.model": fake_model,
+                },
+            ):
+                self.assertIs(
+                    build_player(f"az:{checkpoint}"),
+                    fake_player,
+                )
+                computer = ComputerAlphaZero(
+                    Game(),
+                    BLACK,
+                    path=checkpoint,
+                )
+            self.assertIs(computer.player, fake_player)
+            self.assertEqual(player_type.call_count, 2)
+            self.assertEqual(
+                player_type.call_args_list[0].args,
+                (checkpoint.resolve(),),
+            )
+            self.assertEqual(
+                player_type.call_args_list[1].kwargs["simulations"],
+                512,
+            )
+            self.assertEqual(
+                player_type.call_args_list[1].kwargs["fpu_reduction"],
+                0.20,
+            )
+            self.assertEqual(
+                player_type.call_args_list[1].kwargs["leaf_batch_size"],
+                8,
+            )
+            self.assertEqual(
+                player_type.call_args_list[1].kwargs["virtual_loss"],
+                1.0,
+            )
+            self.assertEqual(
+                player_type.call_args_list[1].kwargs["exact_endgame_empties"],
+                10,
+            )
+            for call in player_type.call_args_list:
+                self.assertEqual(call.kwargs["simulations"], 512)
+                self.assertEqual(call.kwargs["fpu_reduction"], 0.20)
+                self.assertEqual(call.kwargs["leaf_batch_size"], 8)
+                self.assertEqual(call.kwargs["virtual_loss"], 1.0)
+                self.assertEqual(call.kwargs["exact_endgame_empties"], 10)
 
     def test_latest_dqn_ignores_newer_aborted_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

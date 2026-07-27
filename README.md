@@ -10,6 +10,7 @@ their latest checkpoint automatically:
 ```powershell
 python benchmark_models.py --player-1 genetic --player-2 ppo --games 100
 python benchmark_models.py --player-1 dqn --player-2 minimax:3 --games 100
+python benchmark_models.py --player-1 alphazero --player-2 minimax:4 --games 20
 ```
 
 Benchmarks use four randomized opening plies by default and reuse each opening
@@ -18,11 +19,13 @@ repeating the same two games throughout a large match. Use
 `--opening-plies 0` to benchmark only the standard starting position.
 
 The available names are `random`, `greedy`, `minimax`, `dqn`, `bard`,
-`genetic`, and `ppo`. `ppo` combines the learned policy/value network with
-depth-2 policy-guided search and an exact eight-empty endgame search. The
-interactive benchmark picker and the `watch_models.py` dropdown include the
-path currently selected as latest. Explicit paths such as
-`genetic:models/genetic/genetic_gen_0024.json` remain available for reproducible
+`genetic`, `ppo`, and `alphazero` (also `az`). `ppo` combines its learned
+policy/value network with depth-2 search, while `alphazero` uses its native
+neural MCTS with 256 simulations and exact eight-empty endgames. The interactive
+benchmark picker and the `watch_models.py` dropdown include the path currently
+selected as latest. Explicit paths such as
+`genetic:models/genetic/genetic_gen_0024.json` and
+`alphazero:models/alphazero/best.az` remain available for reproducible
 comparisons with older checkpoints.
 
 ## Genetic training
@@ -110,5 +113,118 @@ from computer import ComputerPPO
 computer = ComputerPPO(game, color)  # latest checkpoint, search depth 2
 ```
 
-`computer.py` imports PyTorch only when a PPO computer is constructed.
+`computer.py` imports PyTorch only when a PPO or AlphaZero computer is
+constructed.
+
+## AlphaZero training
+
+The AlphaZero implementation is independent of PPO. It trains a residual
+policy/WDL network from neural-guided MCTS visit distributions, exact endgame
+results, and completed self-play games. It does not use PPO advantages,
+likelihood ratios, fixed-opponent actions, WTHOR, or any other human-game
+corpus.
+
+All optimized AlphaZero code is isolated in the `alphazero/` package:
+`board.py` contains its private rules engine, `mcts.py` its search,
+`model.py` its network/inference code, `replay.py` its replay store, and
+`training.py` its training pipeline. The top-level `train_alphazero.py` is only
+a compatibility launcher. The shared `game.py` and the PPO/genetic model files
+are not modified or imported by the training hot path.
+
+Start a standard run with:
+
+```powershell
+python train_alphazero.py --generations 500
+```
+
+Checkpoints, replay data, snapshots, and metrics are isolated under
+`models/alphazero`. Resume targets are cumulative:
+
+```powershell
+python train_alphazero.py --resume models/alphazero/latest.az `
+    --generations 800
+```
+
+Self-play keeps several games active and now selects up to eight collision-aware
+leaves per game in each search wave. Temporary virtual loss diversifies those
+paths, then one cached neural batch evaluates them and the temporary statistics
+are removed before normal backup. This also makes interactive single-game
+search genuinely batched instead of issuing one model call per simulation.
+Set `--leaf-batch-size 1` for strictly sequential MCTS.
+
+On CUDA, one process owns the model. On CPU, independent game groups run in
+persistent spawned processes. The default on a 12-logical-CPU machine is 10
+single-threaded workers, matching the Core 5 120U's core topology while
+avoiding OpenMP oversubscription. It can still be overridden:
+
+```powershell
+python train_alphazero.py --device cpu --self-play-workers 10 `
+    --worker-torch-threads 1
+```
+
+The private search engine uses immutable two-`uint64` bitboards, cached legal
+moves and flip masks, precomputed move rays and D4 symmetry lookup tables,
+vectorized NumPy encoders, subtree reuse, prior-mass first-play urgency, and an
+exact-endgame transposition table. Endgame search orders TT hints, corners, odd
+empty regions, and low opponent mobility; it evicts a bounded cache tranche
+instead of clearing the full table. This makes exact solving at the new
+ten-empty default practical. Network inference uses channels-last convolution
+storage, reuses the already-transferred legal plane as its mask, and evaluates
+only the policy and WDL heads; margin and ownership remain training-only.
+
+Replay augmentation is vectorized, cached legal masks avoid regenerating moves,
+and prioritized sampling uses a Fenwick sum tree rather than rebuilding a
+probability vector over the whole replay buffer. Priorities use policy KL
+error, not raw cross-entropy, so a correctly predicted high-entropy target is
+not oversampled forever. Duplicate samples are aggregated before updates.
+Replay checkpoints are uncompressed by default because that is much faster to
+save. Use `--compress-replay` if disk space is more important than save speed.
+CPU workers reuse network objects and receive weights through shared memory.
+
+Each generation also refreshes a prioritized sample of old replay positions
+with current-network MCTS. A `0.995` exponential moving average of the learned
+weights drives self-play, arena evaluation, and deployment, reducing update
+noise while raw weights and optimizer state remain resumable. Older version-1
+checkpoints remain loadable; their EMA starts from the existing model. Arena
+gating now uses 32 color-paired games, longer randomized openings, and a 55%
+promotion threshold. Equivalence tests continuously compare the private rules
+engine with the unchanged reference `Game`.
+
+For a quick CPU smoke run:
+
+```powershell
+python train_alphazero.py --generations 1 --games-per-generation 2 `
+    --simulations 2 --channels 8 --blocks 1 --value-hidden 16 `
+    --training-steps 1 --batch-size 32 --evaluation-every 0
+```
+
+An AlphaZero checkpoint can be used programmatically without changing the main
+game engine:
+
+```python
+from alphazero.model import AlphaZeroPlayer
+
+player = AlphaZeroPlayer(
+    "models/alphazero/best.az",
+    simulations=512,
+    leaf_batch_size=8,
+)
+```
+
+The benchmark, spectator, and original game interfaces prefer the promoted
+`best.az`; `latest.az` remains the checkpoint to resume training:
+
+```powershell
+python benchmark_models.py --player-1 alphazero --player-2 ppo --games 20
+python watch_models.py --black alphazero --white minimax:4
+```
+
+`main.py` includes an `alphazero` opponent in its left/right selection cycle.
+For code using the original bound-computer API:
+
+```python
+from computer import ComputerAlphaZero
+
+computer = ComputerAlphaZero(game, color)  # best.az, 512 batched simulations
+```
 

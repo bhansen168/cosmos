@@ -42,6 +42,42 @@ def find_latest_ppo_checkpoint(models_directory=None):
     return max(candidates, key=freshness).resolve()
 
 
+def find_latest_alphazero_checkpoint(models_directory=None):
+    """Find the strongest public AlphaZero checkpoint with legacy fallbacks."""
+    if models_directory is None:
+        models_directory = Path(__file__).resolve().parent / "models"
+    models_directory = Path(models_directory)
+    alphazero_directory = models_directory / "alphazero"
+
+    champion = alphazero_directory / "best.az"
+    if champion.is_file():
+        return champion.resolve()
+
+    latest = [
+        checkpoint
+        for directory in (alphazero_directory, models_directory)
+        for checkpoint in directory.glob("latest*.az")
+        if checkpoint.is_file()
+    ]
+    candidates = latest or [
+        checkpoint
+        for checkpoint in models_directory.rglob("*.az")
+        if checkpoint.is_file()
+    ]
+    if not candidates:
+        raise FileNotFoundError(
+            f"No AlphaZero checkpoints found under {models_directory.resolve()}"
+        )
+
+    def freshness(checkpoint):
+        try:
+            return checkpoint.stat().st_mtime_ns, checkpoint.name.casefold()
+        except OSError:
+            return -1, checkpoint.name.casefold()
+
+    return max(candidates, key=freshness).resolve()
+
+
 class Computer: 
     name = "Greedy"
 
@@ -226,7 +262,7 @@ class ComputerPPO(ModelComputer):
             endgame_exact_empties=endgame_exact_empties,
             symmetry_ensemble=symmetry_ensemble,
         )
-        super().__init__(game,color,player)
+        super().__init__(game, color, player)
 
 
 def create_ppo_computer(
@@ -245,6 +281,84 @@ def create_ppo_computer(
         device=device,
         search_depth=search_depth,
         endgame_exact_empties=endgame_exact_empties,
+        symmetry_ensemble=symmetry_ensemble,
+    )
+
+
+class ComputerAlphaZero(ModelComputer):
+    """Original bound-Computer adapter for an AlphaZero MCTS checkpoint."""
+
+    def __init__(
+        self,
+        game=None,
+        color=None,
+        path=None,
+        device="auto",
+        simulations=512,
+        c_puct=1.5,
+        fpu_reduction=0.20,
+        leaf_batch_size=8,
+        virtual_loss=1.0,
+        exact_endgame_empties=10,
+        inference_batch_size=512,
+        cache_size=50_000,
+        symmetry_ensemble=False,
+    ):
+        if path is None:
+            path = find_latest_alphazero_checkpoint()
+        self.path = Path(path).resolve()
+        if not self.path.is_file():
+            raise FileNotFoundError(
+                f"AlphaZero checkpoint does not exist: {self.path}"
+            )
+
+        # Keep non-AlphaZero game modes independent of PyTorch.
+        from alphazero.model import AlphaZeroPlayer
+
+        player = AlphaZeroPlayer(
+            self.path,
+            device=device,
+            simulations=simulations,
+            c_puct=c_puct,
+            fpu_reduction=fpu_reduction,
+            leaf_batch_size=leaf_batch_size,
+            virtual_loss=virtual_loss,
+            exact_endgame_empties=exact_endgame_empties,
+            inference_batch_size=inference_batch_size,
+            cache_size=cache_size,
+            symmetry_ensemble=symmetry_ensemble,
+        )
+        super().__init__(game, color, player)
+
+
+def create_alphazero_computer(
+    game,
+    color,
+    checkpoint_path=None,
+    device="auto",
+    simulations=512,
+    c_puct=1.5,
+    fpu_reduction=0.20,
+    leaf_batch_size=8,
+    virtual_loss=1.0,
+    exact_endgame_empties=10,
+    inference_batch_size=512,
+    cache_size=50_000,
+    symmetry_ensemble=False,
+):
+    return ComputerAlphaZero(
+        game,
+        color,
+        path=checkpoint_path,
+        device=device,
+        simulations=simulations,
+        c_puct=c_puct,
+        fpu_reduction=fpu_reduction,
+        leaf_batch_size=leaf_batch_size,
+        virtual_loss=virtual_loss,
+        exact_endgame_empties=exact_endgame_empties,
+        inference_batch_size=inference_batch_size,
+        cache_size=cache_size,
         symmetry_ensemble=symmetry_ensemble,
     )
 

@@ -10,9 +10,11 @@ Run without arguments for an interactive model picker, or pass model specs:
     python benchmark_models.py --player-1 greedy \
         --player-2 models/v1/othello_100k.pth --games 100
     python benchmark_models.py --player-1 bard --player-2 greedy --games 100
+    python benchmark_models.py --player-1 alphazero --player-2 minimax:4 --games 20
 
 The program is independent of the Pygame game loop, so benchmarks can run
-without opening a window. PyTorch is imported only when a DQN is selected.
+without opening a window. PyTorch is imported only when a neural model is
+selected.
 """
 
 from __future__ import annotations
@@ -45,6 +47,7 @@ MODELS_DIRECTORY = PROJECT_ROOT / "models"
 GENETIC_MODELS_DIRECTORY = MODELS_DIRECTORY / "genetic"
 DEFAULT_BARD_CHECKPOINT = MODELS_DIRECTORY / "supervised" / "wthor-kaggle.bard"
 PPO_MODELS_DIRECTORY = MODELS_DIRECTORY / "ppo"
+ALPHAZERO_MODELS_DIRECTORY = MODELS_DIRECTORY / "alphazero"
 
 BENCHMARK_MINIMAX_DEPTHS = (1, 2, 3, 4, 5, 6)
 
@@ -229,6 +232,21 @@ def latest_ppo_checkpoint() -> Path:
     return _newest_checkpoint(candidates, "PPO")
 
 
+def latest_alphazero_checkpoint() -> Path:
+    champion = ALPHAZERO_MODELS_DIRECTORY / "best.az"
+    if champion.is_file():
+        return champion
+
+    search_directories = (ALPHAZERO_MODELS_DIRECTORY, MODELS_DIRECTORY)
+    latest_files = [
+        checkpoint
+        for directory in search_directories
+        for checkpoint in directory.glob("latest*.az")
+    ]
+    candidates = latest_files or list(MODELS_DIRECTORY.rglob("*.az"))
+    return _newest_checkpoint(candidates, "AlphaZero")
+
+
 def discover_models() -> list[ModelOption]:
     options = [
         ModelOption("random", "Random"),
@@ -244,22 +262,20 @@ def discover_models() -> list[ModelOption]:
         ("bard", "Bard supervised", latest_bard_checkpoint),
         ("genetic", "Genetic", latest_genetic_checkpoint),
         ("ppo", "PPO", latest_ppo_checkpoint),
+        ("alphazero", "AlphaZero", latest_alphazero_checkpoint),
     )
     for spec, label, resolver in learned_models:
         try:
             checkpoint = resolver()
         except ValueError:
             continue
+        selection = "default" if spec == "alphazero" else "latest"
         options.append(
-            ModelOption(spec, f"{label} (latest: {_relative_label(checkpoint)})")
-        )
-        if spec == "ppo":
-            options.append(
-                ModelOption(
-                    "ppo-raw",
-                    f"PPO raw policy, no search (latest: {_relative_label(checkpoint)})",
-                )
+            ModelOption(
+                spec,
+                f"{label} ({selection}: {_relative_label(checkpoint)})",
             )
+        )
 
     return options
 
@@ -325,15 +341,28 @@ def normalize_genetic_checkpoint(raw_spec: str) -> Path:
 def normalize_ppo_checkpoint(raw_spec: str) -> Path:
     stripped = raw_spec.strip()
     lowered = stripped.lower()
-    if lowered in ("ppo", "ppo-raw"):
+    if lowered == "ppo":
         return latest_ppo_checkpoint()
-    if lowered.startswith("ppo-raw:"):
-        spec = stripped[len("ppo-raw:") :]
-    elif lowered.startswith("ppo:"):
+    if lowered.startswith("ppo:"):
         spec = stripped[len("ppo:") :]
     else:
         spec = stripped
     return _normalize_explicit_checkpoint(spec, "PPO", ".ppo")
+
+
+def normalize_alphazero_checkpoint(raw_spec: str) -> Path:
+    stripped = raw_spec.strip()
+    lowered = stripped.lower()
+    if lowered in ("alphazero", "az"):
+        return latest_alphazero_checkpoint()
+    if lowered.startswith("alphazero:"):
+        spec = stripped[len("alphazero:") :]
+    elif lowered.startswith("az:"):
+        spec = stripped[len("az:") :]
+    else:
+        spec = stripped
+    return _normalize_explicit_checkpoint(spec, "AlphaZero", ".az")
+
 
 def normalize_bard_checkpoint(raw_spec: str) -> Path:
     stripped = raw_spec.strip()
@@ -382,9 +411,8 @@ def build_player(spec: str) -> Player:
     ):
         return GeneticPlayer.from_checkpoint(normalize_genetic_checkpoint(stripped))
     if (
-        normalized in ("ppo", "ppo-raw")
+        normalized == "ppo"
         or normalized.startswith("ppo:")
-        or normalized.startswith("ppo-raw:")
         or normalized.endswith(".ppo")
     ):
         try:
@@ -394,11 +422,32 @@ def build_player(spec: str) -> Player:
                 "PPO checkpoints require PyTorch. Run the benchmark with the "
                 "same Python environment used to train PPO."
             ) from exc
-        raw_policy = normalized == "ppo-raw" or normalized.startswith("ppo-raw:")
         return PPOPlayer(
             normalize_ppo_checkpoint(stripped),
-            search_depth=0 if raw_policy else 2,
-            endgame_exact_empties=0 if raw_policy else 8,
+            search_depth=2,
+            endgame_exact_empties=8,
+        )
+    if (
+        normalized in ("alphazero", "az")
+        or normalized.startswith("alphazero:")
+        or normalized.startswith("az:")
+        or normalized.endswith(".az")
+    ):
+        try:
+            from alphazero.model import AlphaZeroPlayer
+        except ImportError as exc:
+            raise RuntimeError(
+                "AlphaZero checkpoints require PyTorch. Run this tool with the "
+                "same Python environment used to train AlphaZero."
+            ) from exc
+        return AlphaZeroPlayer(
+            normalize_alphazero_checkpoint(stripped),
+            simulations=512,
+            c_puct=1.5,
+            fpu_reduction=0.20,
+            leaf_batch_size=8,
+            virtual_loss=1.0,
+            exact_endgame_empties=10,
         )
     if (
         normalized == "dqn"
@@ -408,7 +457,7 @@ def build_player(spec: str) -> Player:
         return DQNPlayer(normalize_checkpoint(stripped))
     raise ValueError(
         f"Unknown model {stripped!r}; use random, greedy, minimax, dqn, bard, "
-        "genetic, ppo, ppo-raw, or an explicit checkpoint path"
+        "genetic, ppo, alphazero, or an explicit checkpoint path"
     )
 
 def play_game(
@@ -513,14 +562,15 @@ def print_results(
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare COSMOS random, greedy, minimax, Bard, genetic, and DQN "
-            "Othello players."
+            "Generate games with COSMOS random, greedy, minimax, learned, and "
+            "AlphaZero Othello players."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Model specs can be 'random', 'greedy', 'minimax', "
             "'minimax:DEPTH', 'bard', 'bard:PATH.bard', "
-            "'genetic:PATH.json', or a path to a .pth file.\n"
+            "'genetic:PATH.json', 'alphazero', 'alphazero:PATH.az', "
+            "or a path to a .pth file.\n"
             "Omit both players to use the interactive model picker."
         ),
     )

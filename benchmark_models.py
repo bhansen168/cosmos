@@ -8,15 +8,16 @@ Run without arguments for an interactive model picker, or pass model specs:
     python benchmark_models.py --player-1 genetic --player-2 minimax --games 100
     python benchmark_models.py --player-1 bard --player-2 greedy --games 100
     python benchmark_models.py --player-1 ppo --player-2 dqn --games 100
+    python benchmark_models.py --player-1 alphazero --player-2 minimax:4 --games 20
 
-The dqn, bard, genetic, and ppo names resolve to the newest available checkpoint
-each time the program starts. PPO uses policy/value-guided search. Explicit
-checkpoint paths remain supported when a benchmark must be reproducible against
-an older model.
+The dqn, bard, genetic, and ppo names resolve to their newest available
+checkpoint each time the program starts. AlphaZero prefers its arena-promoted
+best checkpoint. PPO and AlphaZero use policy/value-guided search. Explicit
+checkpoint paths remain supported for reproducible comparisons.
 
 The program is independent of the Pygame game loop, so benchmarks can run
-without opening a window. PyTorch is imported only when a DQN or PPO model is
-selected.
+without opening a window. PyTorch is imported only when a DQN, PPO, or
+AlphaZero model is selected.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 MODELS_DIRECTORY = PROJECT_ROOT / "models"
 GENETIC_MODELS_DIRECTORY = MODELS_DIRECTORY / "genetic"
 PPO_MODELS_DIRECTORY = MODELS_DIRECTORY / "ppo"
+ALPHAZERO_MODELS_DIRECTORY = MODELS_DIRECTORY / "alphazero"
 
 
 class DQNPlayer:
@@ -223,6 +225,23 @@ def latest_ppo_checkpoint() -> Path:
     return _newest_checkpoint(candidates, "PPO")
 
 
+def latest_alphazero_checkpoint() -> Path:
+    """Resolve the strongest public checkpoint, with resumable fallbacks."""
+
+    champion = ALPHAZERO_MODELS_DIRECTORY / "best.az"
+    if champion.is_file():
+        return champion
+
+    search_directories = (ALPHAZERO_MODELS_DIRECTORY, MODELS_DIRECTORY)
+    latest_files = [
+        checkpoint
+        for directory in search_directories
+        for checkpoint in directory.glob("latest*.az")
+    ]
+    candidates = latest_files or list(MODELS_DIRECTORY.rglob("*.az"))
+    return _newest_checkpoint(candidates, "AlphaZero")
+
+
 def _relative_label(checkpoint: Path) -> str:
     try:
         return str(checkpoint.relative_to(PROJECT_ROOT))
@@ -245,14 +264,19 @@ def discover_models() -> list[ModelOption]:
         ("bard", "Bard supervised", latest_bard_checkpoint),
         ("genetic", "Genetic", latest_genetic_checkpoint),
         ("ppo", "PPO", latest_ppo_checkpoint),
+        ("alphazero", "AlphaZero", latest_alphazero_checkpoint),
     )
     for spec, label, resolver in learned_models:
         try:
             checkpoint = resolver()
         except ValueError:
             continue
+        selection = "default" if spec == "alphazero" else "latest"
         options.append(
-            ModelOption(spec, f"{label} (latest: {_relative_label(checkpoint)})")
+            ModelOption(
+                spec,
+                f"{label} ({selection}: {_relative_label(checkpoint)})",
+            )
         )
 
     return options
@@ -325,6 +349,20 @@ def normalize_ppo_checkpoint(raw_spec: str) -> Path:
         return latest_ppo_checkpoint()
     spec = stripped[len("ppo:") :] if lowered.startswith("ppo:") else stripped
     return _normalize_explicit_checkpoint(spec, "PPO", ".ppo")
+
+
+def normalize_alphazero_checkpoint(raw_spec: str) -> Path:
+    stripped = raw_spec.strip()
+    lowered = stripped.lower()
+    if lowered in ("alphazero", "az"):
+        return latest_alphazero_checkpoint()
+    if lowered.startswith("alphazero:"):
+        spec = stripped[len("alphazero:") :]
+    elif lowered.startswith("az:"):
+        spec = stripped[len("az:") :]
+    else:
+        spec = stripped
+    return _normalize_explicit_checkpoint(spec, "AlphaZero", ".az")
 
 
 def normalize_genetic_checkpoint(raw_spec: str) -> Path:
@@ -402,6 +440,28 @@ def build_player(spec: str) -> Player:
             ) from exc
         return PPOPlayer(normalize_ppo_checkpoint(stripped))
     if (
+        normalized in ("alphazero", "az")
+        or normalized.startswith("alphazero:")
+        or normalized.startswith("az:")
+        or normalized.endswith(".az")
+    ):
+        try:
+            from alphazero.model import AlphaZeroPlayer
+        except ImportError as exc:
+            raise RuntimeError(
+                "AlphaZero checkpoints require PyTorch. Run the benchmark with "
+                "the same Python environment used to train AlphaZero."
+            ) from exc
+        return AlphaZeroPlayer(
+            normalize_alphazero_checkpoint(stripped),
+            simulations=512,
+            c_puct=1.5,
+            fpu_reduction=0.20,
+            leaf_batch_size=8,
+            virtual_loss=1.0,
+            exact_endgame_empties=10,
+        )
+    if (
         normalized == "dqn"
         or normalized.startswith("dqn:")
         or normalized.endswith(".pth")
@@ -409,7 +469,7 @@ def build_player(spec: str) -> Player:
         return DQNPlayer(normalize_checkpoint(stripped))
     raise ValueError(
         f"Unknown model {stripped!r}; use random, greedy, minimax, dqn, bard, "
-        "genetic, ppo, or an explicit checkpoint path"
+        "genetic, ppo, alphazero, or an explicit checkpoint path"
     )
 
 
@@ -586,16 +646,16 @@ def print_results(
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare COSMOS random, greedy, minimax, DQN, Bard, genetic, and "
-            "PPO Othello players."
+            "Compare COSMOS random, greedy, minimax, DQN, Bard, genetic, PPO, "
+            "and AlphaZero Othello players."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Use 'random', 'greedy', 'minimax', 'dqn', 'bard', 'genetic', "
-            "or 'ppo'. Learned-model names automatically use their latest "
-            "checkpoint. Custom specs such as 'minimax:DEPTH', "
+            "'ppo', or 'alphazero' (also 'az'). AlphaZero uses its promoted "
+            "best checkpoint when available. Custom specs such as 'minimax:DEPTH', "
             "'bard:PATH.bard', 'genetic:PATH.json', 'ppo:PATH.ppo', and "
-            "'dqn:PATH.pth' are also supported.\n"
+            "'alphazero:PATH.az' are also supported.\n"
             "Omit both players to use the interactive model picker."
         ),
     )
