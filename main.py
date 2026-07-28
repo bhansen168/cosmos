@@ -16,7 +16,7 @@ from computer import (
     ComputerPPO,
     ComputerSupervised as SupervisedComputer,
     GeneticComputer,
-    create_minimax_computer,ComputerCNN
+    create_minimax_computer
 )
 def latest_dqn_checkpoint(folder="models/checkpoints", version="v02"):
     """Return the path to the highest-episode DQN checkpoint in `folder`."""
