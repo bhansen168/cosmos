@@ -2,7 +2,7 @@ import os
 import sys
 import pickle
 import numpy as np
-from datetime import datetime
+from datetime import datetime,timedelta
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -10,6 +10,15 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 
 sys.path.append(os.getcwd())
+
+def predict_finish(start,amtCompleted):
+    #start is datetime from start, amtCompleted is 0-1 decimal
+    secsElapsed = (datetime.now()-start).total_seconds()
+    totalSecs = int((1/amtCompleted)*secsElapsed)
+
+    finish = datetime.now() + timedelta(seconds = totalSecs - secsElapsed)
+    return str(finish).split(".")[0]
+
 
 # -------------------------------------------------------------
 # 1. SPATIAL STATE ENCODING & MAPPING
@@ -141,8 +150,9 @@ class CompSupervisedCNN:
         model = OthelloCNN().to(device)
         criterion = nn.CrossEntropyLoss()  # Automatically computes stable multi-class log loss
         optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
-        
-        print("Commencing Deep CNN Optimization Run...")
+
+        startDT = datetime.now()
+        print(f"Commencing Deep CNN Optimization Run at {str(startDT).split('.')[0]}...")
         for epoch in range(epochs):
             model.train()
             train_loss = 0.0
@@ -176,8 +186,10 @@ class CompSupervisedCNN:
             epoch_train_loss = train_loss / len(X_train)
             epoch_val_loss = val_loss / len(X_val)
             val_acc = (correct / total) * 100
-            
-            print(f"Epoch {epoch+1:02d}/{epochs:02d} | Train loss (mlogloss): {epoch_train_loss:.4f} | Val loss: {epoch_val_loss:.4f} | Val Accuracy: {val_acc:.2f}%")
+
+
+            finish = redict_finish(startDT,(epoch+1)/epochs)
+            print(f"Epoch {epoch+1:02d}/{epochs:02d} | Train loss (mlogloss): {epoch_train_loss:.4f} | Val loss: {epoch_val_loss:.4f} | Val Accuracy: {val_acc:.2f}% | Elapsed: {str(datetime.now() - startDT).split('.')[0]} | Finish at: {str(finish).split('.')[0]}")
             
         os.makedirs(os.path.dirname(savePath), exist_ok=True)
         torch.save(model.state_dict(), savePath)
