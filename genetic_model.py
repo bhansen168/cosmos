@@ -566,13 +566,14 @@ class GeneticPlayer:
         self.search_depth = search_depth
         self.endgame_exact_empties = endgame_exact_empties
         self.name = name
+        #<<<<<<< Updated upstream
+        #    def from_checkpoint(cls, path: str | Path, search_depth: int | None = None) -> GeneticPlayer:
+        #=======
+
 
     @classmethod
-<<<<<<< Updated upstream
-    def from_checkpoint(cls, path: str | Path, search_depth: int | None = None) -> GeneticPlayer:
-=======
     def from_checkpoint(cls, path: str | Path) -> Player:
->>>>>>> Stashed changes
+        #>>>>>>> Stashed changes
         checkpoint_path = Path(path).expanduser().resolve()
         payload = load_checkpoint(checkpoint_path)
         legacy_champion = payload.get("legacy_champion")
