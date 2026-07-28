@@ -7,6 +7,8 @@ from computer_supervised import (
     load_agent as load_agent_sup,
 )
 
+from testcnn import CNNAgent
+
 from datetime import datetime
 
 
@@ -390,6 +392,23 @@ def create_alphazero_computer(
         symmetry_ensemble=symmetry_ensemble,
     )
 
+class ComputerCNN(Computer):
+    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","synthprune-0.5-20260723144438.bard")
+    def __init__(self,game=None,color=None,path=None):
+        super().__init__(game,color)
+
+        if path is None:
+            path = ComputerCNN.PATH
+        self.path = os.path.abspath(path)
+        self.agent = CNNAgent
+        self.name = f"Corio supervised ({os.path.basename(self.path)})"
+
+    def pick(self):
+        indexed_legal = [
+            coord_to_index_sup(move.y,move.x) for move in legal_moves
+        ]
+        state = encode_state_sup(game.board,color)
+        return self.agent.pick(indexed_legal, state, self.color, asCoord=True)
 
 class ComputerSupervised(Computer):
     #formerly known as Computer3
