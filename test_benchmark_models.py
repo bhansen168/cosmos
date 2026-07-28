@@ -62,6 +62,7 @@ from genetic_model import (  # noqa: E402
     GENOME_SIZE,
     LEGACY_GENOME_SIZE,
     GeneticPlayer,
+    LegacyGeneticPlayer,
     TrainingConfig,
     load_checkpoint,
     train,
@@ -566,7 +567,7 @@ class MatchTests(unittest.TestCase):
                 continuous["champion"]["genome"],
             )
 
-    def test_legacy_genetic_checkpoint_upgrades_and_uses_current_winner(self) -> None:
+    def test_legacy_checkpoint_preserves_original_best_ever_player(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "legacy.json"
             stale_best = [0.75 for _ in range(LEGACY_GENOME_SIZE)]
@@ -599,11 +600,11 @@ class MatchTests(unittest.TestCase):
             self.assertEqual(upgraded["source_version"], 1)
             self.assertEqual(upgraded["version"], CHECKPOINT_VERSION)
             self.assertEqual(len(upgraded["champion"]["genome"]), GENOME_SIZE)
+            self.assertIsInstance(player, LegacyGeneticPlayer)
             self.assertEqual(
                 player.genome,
-                tuple(upgraded["champion"]["genome"]),
+                tuple(stale_best),
             )
-            self.assertEqual(player.endgame_exact_empties, 8)
             self.assertNotEqual(
                 upgraded["champion"]["genome"],
                 upgraded["best_ever"]["genome"],

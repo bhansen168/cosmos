@@ -1,0 +1,71 @@
+{
+  "format": "cosmos-genetic-othello",
+  "version": 1,
+  "saved_at": "2026-07-14T20:50:06.005217+00:00",
+  "generation": 24,
+  "reference_only": true,
+  "source_commit": "99679db0",
+  "feature_names": [
+    "disc_difference",
+    "opponent_mobility",
+    "corners",
+    "edges",
+    "frontier_safety",
+    "positional_value"
+  ],
+  "genome_layout": "opening then endgame feature weights",
+  "generation_best": {
+    "genome": [
+      -0.44251867849047444,
+      -0.036268257728605556,
+      0.7131164665005443,
+      0.1874289451906308,
+      0.009149213351317811,
+      1.6987054347325186,
+      0.711097671315002,
+      0.8260368268832134,
+      1.1577991686681566,
+      0.5668841240841112,
+      0.21325029814250573,
+      0.44680773483401837
+    ],
+    "fitness": 0.7355113636363633,
+    "games": 44
+  },
+  "best_ever": {
+    "genome": [
+      0.6731700979014472,
+      0.1961182771691752,
+      0.8820439810285096,
+      0.5363647418404579,
+      0.47985659043237194,
+      1.4490437737873854,
+      0.1664352311386429,
+      -0.02344160927197031,
+      0.31557339178164895,
+      0.311750338134197,
+      0.029406616705753882,
+      -0.4596828003537443
+    ],
+    "fitness": 0.9439453125,
+    "games": 44
+  },
+  "population": [],
+  "config": {
+    "generations": 50,
+    "population_size": 20,
+    "games_per_pair": 2,
+    "baseline_games": 2,
+    "minimax_games": 2,
+    "minimax_depth": 1,
+    "elite_count": 2,
+    "tournament_size": 3,
+    "crossover_rate": 0.9,
+    "mutation_rate": 0.2,
+    "mutation_sigma": 0.2,
+    "gene_limit": 3.0,
+    "margin_weight": 0.05,
+    "checkpoint_every": 5,
+    "seed": 0
+  }
+}

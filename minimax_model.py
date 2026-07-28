@@ -102,25 +102,66 @@ class MinimaxPlayer:
         alpha: float,
         beta: float,
         root_color: int,
+        transposition: dict[
+            tuple[tuple[tuple[int, ...], ...], int, int, int],
+            tuple[int, str],
+        ]
+        | None = None,
     ) -> int:
+        original_alpha = alpha
+        original_beta = beta
+        cache_key: tuple[tuple[tuple[int, ...], ...], int, int, int] | None = None
+        if transposition is not None:
+            cache_key = (
+                tuple(tuple(row) for row in game.board),
+                color,
+                depth,
+                root_color,
+            )
+            cached = transposition.get(cache_key)
+            if cached is not None:
+                cached_value, bound = cached
+                if bound == "exact":
+                    return cached_value
+                if bound == "lower":
+                    alpha = max(alpha, cached_value)
+                else:
+                    beta = min(beta, cached_value)
+                if alpha >= beta:
+                    return cached_value
+
+        def store(value: int) -> int:
+            if transposition is not None and cache_key is not None:
+                if value <= original_alpha:
+                    bound = "upper"
+                elif value >= original_beta:
+                    bound = "lower"
+                else:
+                    bound = "exact"
+                transposition[cache_key] = (value, bound)
+            return value
+
         legal_moves = game.legal_moves(color)
 
         if not legal_moves:
             if not game.legal_moves(opponent(color)):
-                return self._terminal_value(game, root_color)
+                return store(self._terminal_value(game, root_color))
             if depth <= 0:
-                return self._heuristic_value(game, root_color)
-            return self._alpha_beta(
-                game,
-                opponent(color),
-                depth,
-                alpha,
-                beta,
-                root_color,
+                return store(self._heuristic_value(game, root_color))
+            return store(
+                self._alpha_beta(
+                    game,
+                    opponent(color),
+                    depth,
+                    alpha,
+                    beta,
+                    root_color,
+                    transposition,
+                )
             )
 
         if depth <= 0:
-            return self._heuristic_value(game, root_color)
+            return store(self._heuristic_value(game, root_color))
 
         ordered_moves = self._ordered_moves(legal_moves)
         if color == root_color:
@@ -135,6 +176,7 @@ class MinimaxPlayer:
                         alpha,
                         beta,
                         root_color,
+                        transposition,
                     )
                 finally:
                     game.undo(color, move)
@@ -142,7 +184,7 @@ class MinimaxPlayer:
                 alpha = max(alpha, value)
                 if alpha >= beta:
                     break
-            return value
+            return store(value)
 
         value = self.WIN_SCORE * 2
         for move in ordered_moves:
@@ -155,6 +197,7 @@ class MinimaxPlayer:
                     alpha,
                     beta,
                     root_color,
+                    transposition,
                 )
             finally:
                 game.undo(color, move)
@@ -162,7 +205,7 @@ class MinimaxPlayer:
             beta = min(beta, value)
             if alpha >= beta:
                 break
-        return value
+        return store(value)
 
     def choose_move(
         self,
@@ -179,6 +222,10 @@ class MinimaxPlayer:
         best_move = ordered_moves[0]
         best_value = -self.WIN_SCORE * 2
         alpha = float("-inf")
+        transposition: dict[
+            tuple[tuple[tuple[int, ...], ...], int, int, int],
+            tuple[int, str],
+        ] = {}
 
         for move in ordered_moves:
             game.play(color, move)
@@ -190,6 +237,7 @@ class MinimaxPlayer:
                     alpha,
                     float("inf"),
                     color,
+                    transposition,
                 )
             finally:
                 game.undo(color, move)

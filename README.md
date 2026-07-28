@@ -24,28 +24,47 @@ policy/value network with depth-2 search, while `alphazero` uses its native
 neural MCTS with 256 simulations and exact eight-empty endgames. The interactive
 benchmark picker and the `watch_models.py` dropdown include the path currently
 selected as latest. Explicit paths such as
-`genetic:models/genetic/genetic_gen_0024.json` and
+`genetic:models/genetic_gen_0024_v2.json` and
 `alphazero:models/alphazero/best.az` remain available for reproducible
 comparisons with older checkpoints.
 
+The bare `minimax` name means depth 4. When comparing results, keep the minimax
+depth, opening plies, game count, and seed identical; a result against
+`minimax:2` is not directly comparable to one against bare `minimax`.
+
 ## Genetic training
 
-The genetic trainer uses paired randomized openings, population coevolution,
-historical genetic opponents, a fixed seed evaluator, and a range of lightweight
-search anchors. Bard and DQN models are not used as training or validation
-opponents.
+The version-3 genetic trainer keeps the 30-gene, three-phase evaluator introduced
+in v2. Controlled like-for-like tests found v2 generation 24 stronger than the
+original version-1 player, but also found that v2 generation 49 regressed against
+minimax depths 3 and 4. Version 3 therefore protects the strong v2
+generation-24 genome, admits only promoted champions to the hall of fame, gives
+the deepest affordable minimax target most of the minimax weight, and rejects
+promotions that regress against protected opponents.
 
 New runs write versioned filenames such as
-`models/genetic/genetic_gen_0049_v2.json` and
-`models/genetic/latest_v2.json`; the original unsuffixed checkpoints are left
-untouched. To continue the existing population under the new training process:
+`models/genetic/genetic_gen_0049_v3.json` and
+`models/genetic/latest_v3.json`; v1 and v2 checkpoints are left untouched. To
+continue the latest v2 population under the new training process:
 
 ```powershell
-python genetic_model.py --resume models/genetic/latest.json --generations 100
+python genetic_model.py --resume models/latest_v2.json --generations 100
 ```
 
 `--generations` is the total generation target. The checkpoint suffix can be
-changed with `--checkpoint-suffix`, but defaults to `v2`.
+changed with `--checkpoint-suffix`, but defaults to `v3`. Use
+`--reference-weight 0` for an ablation run without protected references.
+
+Search now uses transposition caches in both the genetic exact endgame and the
+shared minimax player. This preserves move choices while avoiding repeated
+evaluation of the same board. Depth 4 is now practical for benchmarking, but it
+is still substantially more expensive than depth 3 and is not a default
+full-population training opponent.
+
+The exact original version-1 generation-24 best-ever player was recovered from
+Git history as
+`models/history/genetic/original_gen24_v1_reference.json`. It is reference-only,
+not a resumable population checkpoint.
 
 ## PPO training
 

@@ -3,14 +3,15 @@
 
 The current genome contains opening, middlegame, and endgame weights for ten
 normalized board features. Training screens the full population with a fast
-search, then uses a style-diverse league, rotating validation folds, and paired
-champion challenges to choose the checkpoint champion. Games combine sampled
-co-evolution with paired randomized openings against seed, heuristic-search,
-and historical genetic baselines. Bard and DQN models are deliberately absent
-from the opponent pool.
+search, then uses a style-diverse league, rotating validation folds, protected
+historical references, and paired champion challenges to choose the checkpoint
+champion. Games combine sampled co-evolution with paired randomized openings
+against seed, heuristic-search, and accepted historical genetic baselines.
+Bard and DQN models are deliberately absent from the opponent pool.
 
 Version-1 checkpoints containing the original twelve-gene, one-ply evaluator
-are upgraded in memory when loaded or resumed. Existing checkpoint files are
+retain their exact evaluator when loaded for play and are projected onto the
+current genome only when resumed for training. Existing checkpoint files are
 never modified.
 """
 
@@ -46,12 +47,12 @@ from othello_engine import (
 
 
 CHECKPOINT_FORMAT = "cosmos-genetic-othello"
-CHECKPOINT_VERSION = 2
-SUPPORTED_CHECKPOINT_VERSIONS = (1, CHECKPOINT_VERSION)
+CHECKPOINT_VERSION = 3
+SUPPORTED_CHECKPOINT_VERSIONS = (1, 2, CHECKPOINT_VERSION)
 DEFAULT_OUTPUT_DIRECTORY = Path(__file__).resolve().parent / "models" / "genetic"
 DEFAULT_SEARCH_DEPTH = 2
 DEFAULT_ENDGAME_EXACT_EMPTIES = 8
-DEFAULT_CHECKPOINT_SUFFIX = "v2"
+DEFAULT_CHECKPOINT_SUFFIX = "v3"
 PHASE_NAMES = ("opening", "middlegame", "endgame")
 FEATURE_NAMES = (
     "disc_difference",
@@ -76,6 +77,25 @@ LEGACY_FEATURE_NAMES = (
     "positional_value",
 )
 LEGACY_GENOME_SIZE = len(LEGACY_FEATURE_NAMES) * 2
+
+# The original generation-24 file was overwritten during later experiments,
+# but its exact version-1 best-ever genome remains in Git commit 99679db0.
+# Keeping it here makes the old player a permanent training reference instead
+# of relying on a mutable checkpoint filename.
+HISTORICAL_V1_GENOME = (
+    0.6731700979014472,
+    0.1961182771691752,
+    0.8820439810285096,
+    0.5363647418404579,
+    0.47985659043237194,
+    1.4490437737873854,
+    0.1664352311386429,
+    -0.02344160927197031,
+    0.31557339178164895,
+    0.311750338134197,
+    0.029406616705753882,
+    -0.4596828003537443,
+)
 
 CORNER_COORDINATES = ((0, 0), (7, 0), (0, 7), (7, 7))
 CORNER_NEIGHBORS = {
@@ -136,13 +156,127 @@ DEFAULT_SEED_GENOME = (
     1.50,
 )
 
+# Two different 30-gene checkpoints occupied the unsuffixed generation-24 path
+# before v2 was created. Both are retained as immutable opponents because the
+# filename alone no longer tells us which one produced the user's benchmark.
+PRE_V2_GEN24_EARLY_GENOME = (
+    # Git blob fd9241ba:models/genetic/genetic_gen_0024.json
+    1.044667145662147,
+    1.259250737522687,
+    0.5033969435359518,
+    -0.20153021074191887,
+    -0.46822526108085344,
+    -0.1387118723636216,
+    0.846074858081777,
+    0.8953886792251774,
+    0.8324296441554258,
+    -0.01704400746808951,
+    0.5656037384810517,
+    -0.11843771153484445,
+    -0.11849253725351251,
+    2.2127724348053928,
+    1.3830878001135105,
+    -0.29128318327605424,
+    1.4499229060667724,
+    1.2467192351448997,
+    1.648627339580486,
+    1.2258904677754645,
+    0.4157398744935763,
+    1.041597766940174,
+    -0.06683234313969656,
+    1.800822791767185,
+    0.06914524856433875,
+    0.4314016224815917,
+    1.3309995033082522,
+    -0.24277471987332433,
+    -0.137014670586779,
+    0.5668651208217476,
+)
+
+PRE_V2_GEN24_LATE_GENOME = (
+    # Git blob 89a67496:models/genetic/genetic_gen_0024.json
+    0.02027633314604145,
+    1.3498621250304823,
+    0.2760986382286438,
+    0.5156342983781111,
+    0.8458713319147233,
+    -0.24974582151992591,
+    1.292761261792027,
+    -0.026720876918888192,
+    0.8154265239323888,
+    0.4298376943776322,
+    -0.057210946485275214,
+    0.05526525026883779,
+    -0.05644252265626469,
+    0.796380214444296,
+    1.570400265563758,
+    -0.3843456068957236,
+    1.2817881020140536,
+    1.0450340745061835,
+    1.980380955154725,
+    1.0581192242906867,
+    1.7033055514950481,
+    1.0757480380825402,
+    -0.0956368299962005,
+    1.990847296910807,
+    0.7169936113433069,
+    0.7498824500228944,
+    0.014910097392817984,
+    0.4411518612694238,
+    0.485173801867249,
+    1.2601043172686408,
+)
+
+# In controlled, like-for-like tests this v2 generation-24 champion was the
+# strongest saved genome against minimax depth 3. Later v2 training regressed,
+# so this is the primary non-regression anchor for version 3.
+V2_GEN24_REFERENCE_GENOME = (
+    -0.3196216055204014,
+    0.6563326742065625,
+    0.24580239020932207,
+    0.5860259697820984,
+    0.8451783412773045,
+    0.05147072439312589,
+    0.8282164103065013,
+    1.299682856186614,
+    0.9837052313409542,
+    1.3156045673560794,
+    -0.4833760493846777,
+    0.141623756038732,
+    0.15431293248584427,
+    2.3666036312725547,
+    0.9305188145914395,
+    -0.08994846462979506,
+    1.0059260590067822,
+    0.3349756000662764,
+    1.7350031456969444,
+    0.47541522402174463,
+    1.4625003217792825,
+    0.2285179786715565,
+    0.059460076366382016,
+    1.708381751421385,
+    0.4255704845483733,
+    0.6081614820648584,
+    2.075887587166177,
+    1.3498812770589985,
+    0.602656284950107,
+    -0.033339848507672284,
+)
+
 
 def _clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(upper, value))
 
 
 def _upgrade_legacy_genome(genome: Sequence[float]) -> list[float]:
-    """Map a version-1 two-phase genome onto the richer version-2 layout."""
+    """Project a version-1 two-phase genome onto the current layout.
+
+    The old evaluator blended its phases with ``progress ** 2``. At 50 percent
+    progress that is 75 percent opening and 25 percent endgame, so using that
+    mixture for the new middle phase is a closer projection than the previous
+    50/50 blend. Features that did not exist in version 1 start at zero; silently
+    filling them with the default seed used to change a legacy model's policy.
+    """
     if len(genome) == GENOME_SIZE:
         return [float(value) for value in genome]
     if len(genome) != LEGACY_GENOME_SIZE:
@@ -153,11 +287,11 @@ def _upgrade_legacy_genome(genome: Sequence[float]) -> list[float]:
     old_opening = [float(value) for value in genome[: len(LEGACY_FEATURE_NAMES)]]
     old_endgame = [float(value) for value in genome[len(LEGACY_FEATURE_NAMES) :]]
     old_middle = [
-        (opening + endgame) / 2.0
+        0.75 * opening + 0.25 * endgame
         for opening, endgame in zip(old_opening, old_endgame)
     ]
     old_phases = (old_opening, old_middle, old_endgame)
-    upgraded = list(DEFAULT_SEED_GENOME)
+    upgraded = [0.0] * GENOME_SIZE
     feature_mapping = {
         "disc_difference": "disc_difference",
         "opponent_mobility": "mobility_difference",
@@ -332,6 +466,86 @@ def _analyze_board(
     return features, progress, own_discs - other_discs
 
 
+class LegacyGeneticPlayer:
+    """Exact one-ply evaluator used by version-1 checkpoints."""
+
+    WIN_SCORE = 1_000.0
+
+    def __init__(
+        self,
+        genome: Sequence[float],
+        name: str = "Genetic v1",
+    ) -> None:
+        if len(genome) != LEGACY_GENOME_SIZE:
+            raise ValueError(
+                "Legacy genetic genome requires "
+                f"{LEGACY_GENOME_SIZE} values; received {len(genome)}"
+            )
+        self.genome = tuple(float(value) for value in genome)
+        self.name = name
+
+    def evaluate(self, game: HeadlessOthello, color: int) -> float:
+        other = opponent(color)
+        own_moves = game.legal_moves(color)
+        other_moves = game.legal_moves(other)
+        if not own_moves and not other_moves:
+            scores = game.score()
+            difference = scores[color] - scores[other]
+            if difference > 0:
+                return self.WIN_SCORE + difference
+            if difference < 0:
+                return -self.WIN_SCORE + difference
+            return 0.0
+
+        current, progress, _ = _analyze_board(
+            game,
+            color,
+            len(own_moves),
+            len(other_moves),
+        )
+        features = (
+            current[FEATURE_NAMES.index("disc_difference")],
+            -min(len(other_moves), 20) / 20.0,
+            current[FEATURE_NAMES.index("corners")],
+            current[FEATURE_NAMES.index("edges")],
+            current[FEATURE_NAMES.index("frontier_safety")],
+            current[FEATURE_NAMES.index("positional_value")],
+        )
+        phase = progress * progress
+        opening = self.genome[: len(LEGACY_FEATURE_NAMES)]
+        endgame = self.genome[len(LEGACY_FEATURE_NAMES) :]
+        weights = (
+            (1.0 - phase) * opening[index] + phase * endgame[index]
+            for index in range(len(LEGACY_FEATURE_NAMES))
+        )
+        return sum(weight * feature for weight, feature in zip(weights, features))
+
+    def choose_move(
+        self,
+        game: HeadlessOthello,
+        color: int,
+        legal_moves: Sequence[LegalMove],
+        rng: random.Random,
+    ) -> tuple[int, int]:
+        best_value = float("-inf")
+        best_moves: list[LegalMove] = []
+
+        for move in legal_moves:
+            game.play(color, move)
+            try:
+                value = self.evaluate(game, color)
+            finally:
+                game.undo(color, move)
+            if value > best_value + 1e-12:
+                best_value = value
+                best_moves = [move]
+            elif abs(value - best_value) <= 1e-12:
+                best_moves.append(move)
+
+        selected = rng.choice(best_moves)
+        return selected.x, selected.y
+
+
 class GeneticPlayer:
     """Alpha-beta player whose phase-aware evaluator is genetically evolved."""
 
@@ -354,9 +568,26 @@ class GeneticPlayer:
         self.name = name
 
     @classmethod
+<<<<<<< Updated upstream
     def from_checkpoint(cls, path: str | Path, search_depth: int | None = None) -> GeneticPlayer:
+=======
+    def from_checkpoint(cls, path: str | Path) -> Player:
+>>>>>>> Stashed changes
         checkpoint_path = Path(path).expanduser().resolve()
         payload = load_checkpoint(checkpoint_path)
+        legacy_champion = payload.get("legacy_champion")
+        if payload.get("source_version") == 1 and legacy_champion:
+            generation = int(payload["generation"])
+            fitness = float(legacy_champion.get("fitness", 0.0))
+            return LegacyGeneticPlayer(
+                legacy_champion["genome"],
+                name=(
+                    f"Genetic v1 (best-ever through checkpoint generation "
+                    f"{generation}, fitness {fitness:.3f}, "
+                    f"{checkpoint_path.name})"
+                ),
+            )
+
         champion = payload.get("champion") or payload.get("generation_best")
         if not champion:
             champion = payload["best_ever"]
@@ -458,7 +689,44 @@ class GeneticPlayer:
         alpha: float,
         beta: float,
         root_color: int,
+        transposition: dict[
+            tuple[tuple[tuple[int, ...], ...], int, int, int],
+            tuple[float, str],
+        ]
+        | None = None,
     ) -> float:
+        original_alpha = alpha
+        original_beta = beta
+        cache_key: tuple[tuple[tuple[int, ...], ...], int, int, int] | None = None
+        if transposition is not None:
+            cache_key = (
+                tuple(tuple(row) for row in game.board),
+                color,
+                depth,
+                root_color,
+            )
+            cached = transposition.get(cache_key)
+            if cached is not None:
+                cached_value, bound = cached
+                if bound == "exact":
+                    return cached_value
+                if bound == "lower":
+                    alpha = max(alpha, cached_value)
+                else:
+                    beta = min(beta, cached_value)
+                if alpha >= beta:
+                    return cached_value
+
+        def store(value: float) -> float:
+            if transposition is not None and cache_key is not None:
+                if value <= original_alpha:
+                    bound = "upper"
+                elif value >= original_beta:
+                    bound = "lower"
+                else:
+                    bound = "exact"
+                transposition[cache_key] = (value, bound)
+            return value
 
         legal_moves = game.legal_moves(color)
         other_color = opponent(color)
@@ -466,24 +734,29 @@ class GeneticPlayer:
             other_moves = game.legal_moves(other_color)
             move_counts = {color: 0, other_color: len(other_moves)}
             if not other_moves:
-                return self.evaluate(game, root_color, move_counts)
+                return store(self.evaluate(game, root_color, move_counts))
             if depth <= 0:
-                return self.evaluate(game, root_color, move_counts)
-            return self._alpha_beta(
-                game,
-                other_color,
-                depth,
-                alpha,
-                beta,
-                root_color,
+                return store(self.evaluate(game, root_color, move_counts))
+            return store(
+                self._alpha_beta(
+                    game,
+                    other_color,
+                    depth,
+                    alpha,
+                    beta,
+                    root_color,
+                    transposition,
+                )
             )
 
         if depth <= 0:
             other_move_count = len(game.legal_moves(other_color))
-            return self.evaluate(
-                game,
-                root_color,
-                {color: len(legal_moves), other_color: other_move_count},
+            return store(
+                self.evaluate(
+                    game,
+                    root_color,
+                    {color: len(legal_moves), other_color: other_move_count},
+                )
             )
 
         if color == root_color:
@@ -498,6 +771,7 @@ class GeneticPlayer:
                         alpha,
                         beta,
                         root_color,
+                        transposition,
                     )
                 finally:
                     game.undo(color, move)
@@ -505,7 +779,7 @@ class GeneticPlayer:
                 alpha = max(alpha, value)
                 if alpha >= beta:
                     break
-            return value
+            return store(value)
 
         value = float("inf")
         for move in self._ordered_moves(legal_moves):
@@ -518,6 +792,7 @@ class GeneticPlayer:
                     alpha,
                     beta,
                     root_color,
+                    transposition,
                 )
             finally:
                 game.undo(color, move)
@@ -525,7 +800,7 @@ class GeneticPlayer:
             beta = min(beta, value)
             if alpha >= beta:
                 break
-        return value
+        return store(value)
 
     def choose_move(
         self,
@@ -541,8 +816,10 @@ class GeneticPlayer:
             square == EMPTY for row in game.board for square in row
         )
         remaining_depth = self.search_depth - 1
-        if empty_count <= self.endgame_exact_empties:
+        exact_endgame = empty_count <= self.endgame_exact_empties
+        if exact_endgame:
             remaining_depth = max(remaining_depth, empty_count - 1)
+        transposition = {} if exact_endgame else None
 
         game = game.copy()
         for move in self._ordered_moves(legal_moves):
@@ -555,6 +832,7 @@ class GeneticPlayer:
                     alpha,
                     float("inf"),
                     color,
+                    transposition,
                 )
             finally:
                 game.undo(color, move)
@@ -618,9 +896,10 @@ class TrainingConfig:
     coevolution_opponents: int = 6
     baseline_games: int = 1
     minimax_games: int = 1
-    # This is the maximum anchor depth. Training and validation use every
-    # depth from 1 through this value so no single minimax style dominates.
+    # Depth 4 remains available through the CLI, but is not a practical
+    # default training opponent in the current pure-Python engine.
     minimax_depth: int = 3
+    # Weight of the deepest target; shallower anchors together add half more.
     minimax_weight: float = 3.0
     training_search_depth: int = 1
     search_depth: int = DEFAULT_SEARCH_DEPTH
@@ -630,27 +909,33 @@ class TrainingConfig:
     validation_openings: int = 3
     validation_seed: int = 10_000
     validation_every: int = 2
-    validation_folds: int = 6
-    validation_min_improvement: float = 0.0
-    validation_hall_of_fame_opponents: int = 2
-    promotion_validation_tolerance: float = 0.01
+    validation_folds: int = 12
+    validation_min_improvement: float = 0.01
+    validation_hall_of_fame_opponents: int = 1
+    promotion_validation_tolerance: float = 0.0
+    promotion_regression_tolerance: float = 0.17
+    reference_min_score: float = 0.45
+    reference_weight: float = 2.0
+    validation_parent_weight: float = 0.35
     challenge_openings: int = 12
-    challenge_score: float = 0.50
+    challenge_score: float = 0.55
     hall_of_fame_size: int = 12
-    hall_of_fame_opponents: int = 2
+    hall_of_fame_opponents: int = 1
     hall_of_fame_weight: float = 2.0
     elite_count: int = 3
     tournament_size: int = 4
-    crossover_rate: float = 0.90
-    mutation_rate: float = 0.25
-    mutation_sigma: float = 0.25
+    crossover_rate: float = 0.75
+    mutation_rate: float = 0.20
+    mutation_sigma: float = 0.18
     gene_limit: float = 4.0
     margin_weight: float = 0.05
     normalize_genomes: bool = True
+    champion_mutants: int = 4
+    warm_start_mutants: int = 8
     random_immigrants: int = 2
     stagnation_generations: int = 6
-    mutation_boost: float = 2.0
-    stagnation_immigrants: int = 4
+    mutation_boost: float = 1.75
+    stagnation_immigrants: int = 2
     checkpoint_every: int = 5
     checkpoint_suffix: str = DEFAULT_CHECKPOINT_SUFFIX
     output_directory: Path = field(default_factory=lambda: DEFAULT_OUTPUT_DIRECTORY)
@@ -696,6 +981,14 @@ class TrainingConfig:
             raise ValueError("validation hall-of-fame opponents cannot be negative")
         if self.promotion_validation_tolerance < 0.0:
             raise ValueError("promotion validation tolerance cannot be negative")
+        if not 0.0 <= self.promotion_regression_tolerance <= 1.0:
+            raise ValueError("promotion regression tolerance must be between 0 and 1")
+        if not 0.0 <= self.reference_min_score <= 1.0:
+            raise ValueError("reference minimum score must be between 0 and 1")
+        if self.reference_weight < 0.0:
+            raise ValueError("reference fitness weight cannot be negative")
+        if not 0.0 <= self.validation_parent_weight <= 1.0:
+            raise ValueError("validation parent weight must be between 0 and 1")
         if self.challenge_openings < 1:
             raise ValueError("challenge openings must be at least 1")
         if not 0.5 <= self.challenge_score <= 1.0:
@@ -718,6 +1011,8 @@ class TrainingConfig:
             raise ValueError("gene limit must be positive")
         if self.margin_weight < 0.0:
             raise ValueError("margin weight cannot be negative")
+        if self.champion_mutants < 0 or self.warm_start_mutants < 0:
+            raise ValueError("champion and warm-start mutant counts cannot be negative")
         if self.random_immigrants < 0:
             raise ValueError("random immigrants cannot be negative")
         if self.elite_count + self.random_immigrants >= self.population_size:
@@ -749,9 +1044,17 @@ def _random_opening(
     rng: random.Random,
     maximum_plies: int,
 ) -> tuple[HeadlessOthello, int]:
+    target_plies = rng.randint(0, maximum_plies) if maximum_plies else 0
+    return _opening_at_plies(rng, target_plies)
+
+
+def _opening_at_plies(
+    rng: random.Random,
+    target_plies: int,
+) -> tuple[HeadlessOthello, int]:
+    """Create an opening with an exact number of legal moves when possible."""
     game = HeadlessOthello()
     color = BLACK
-    target_plies = rng.randint(0, maximum_plies) if maximum_plies else 0
     moves_played = 0
     consecutive_passes = 0
 
@@ -768,14 +1071,42 @@ def _random_opening(
     return game, color
 
 
-def _make_scenario(rng: random.Random, opening_plies: int) -> MatchScenario:
-    game, current_color = _random_opening(rng, opening_plies)
+def _make_scenario(
+    rng: random.Random,
+    opening_plies: int,
+    *,
+    exact: bool = False,
+) -> MatchScenario:
+    if exact:
+        game, current_color = _opening_at_plies(rng, opening_plies)
+    else:
+        game, current_color = _random_opening(rng, opening_plies)
     return MatchScenario(
         game=game,
         current_color=current_color,
         black_seed=rng.randrange(0, 2**63),
         white_seed=rng.randrange(0, 2**63),
     )
+
+
+def _stratified_scenarios(
+    rng: random.Random,
+    count: int,
+    maximum_plies: int,
+) -> list[MatchScenario]:
+    """Cover the standard start, benchmark opening, and later openings.
+
+    Remaining scenarios stay random so repeated challenges do not train on a
+    tiny fixed set of opening depths.
+    """
+    protected_depths = (0, min(4, maximum_plies), maximum_plies)
+    depths = list(protected_depths[:count])
+    while len(depths) < count:
+        depths.append(rng.randint(0, maximum_plies) if maximum_plies else 0)
+    return [
+        _make_scenario(rng, opening_depth, exact=True)
+        for opening_depth in depths
+    ]
 
 
 def _play_from_scenario(
@@ -879,9 +1210,109 @@ def _round_robin_pairs(
     return pairs
 
 
-def _minimax_anchor_depths(config: TrainingConfig) -> tuple[int, ...]:
+def _minimax_anchor_depths(
+    config: TrainingConfig,
+    maximum_depth: int | None = None,
+) -> tuple[int, ...]:
     """Return a spectrum of heuristic search strengths used as anchors."""
-    return tuple(range(1, config.minimax_depth + 1))
+    if maximum_depth is None:
+        maximum_depth = config.minimax_depth
+    return tuple(range(1, maximum_depth + 1))
+
+
+def _minimax_anchor_weights(
+    config: TrainingConfig,
+    maximum_depth: int | None = None,
+) -> tuple[tuple[int, float], ...]:
+    """Keep the deepest target strong while retaining shallower styles."""
+    depths = _minimax_anchor_depths(config, maximum_depth)
+    target_depth = depths[-1]
+    if len(depths) == 1:
+        return ((depths[0], config.minimax_weight),)
+    auxiliary_weight = config.minimax_weight * 0.5 / (len(depths) - 1)
+    return tuple(
+        (
+            depth,
+            config.minimax_weight
+            if depth == target_depth
+            else auxiliary_weight,
+        )
+        for depth in depths
+    )
+
+
+def _trusted_reference_opponents(
+    config: TrainingConfig,
+    *,
+    search_depth: int | None = None,
+    endgame_exact_empties: int | None = None,
+    historical_index: int | None = None,
+) -> list[tuple[str, Player, float]]:
+    """Return immutable players used to detect and prevent regressions."""
+    if config.reference_weight <= 0.0:
+        return []
+    if search_depth is None:
+        search_depth = config.search_depth
+    if endgame_exact_empties is None:
+        endgame_exact_empties = config.endgame_exact_empties
+    primary_weight = config.reference_weight
+    if historical_index is not None:
+        primary_weight *= 0.75
+    opponents: list[tuple[str, Player, float]] = [
+        (
+            "reference_v2_gen24",
+            GeneticPlayer(
+                V2_GEN24_REFERENCE_GENOME,
+                "Strong v2 generation-24 reference",
+                search_depth=search_depth,
+                endgame_exact_empties=endgame_exact_empties,
+            ),
+            primary_weight,
+        ),
+    ]
+    if historical_index is None:
+        return opponents
+
+    historical_weight = config.reference_weight * 0.25
+    historical_choice = historical_index % 3
+    if historical_choice == 0:
+        opponents.append(
+            (
+                "reference_original_v1",
+                LegacyGeneticPlayer(
+                    HISTORICAL_V1_GENOME,
+                    "Original generation-24 v1 reference",
+                ),
+                historical_weight,
+            )
+        )
+    elif historical_choice == 1:
+        opponents.append(
+            (
+                "reference_pre_v2_gen24_early",
+                GeneticPlayer(
+                    PRE_V2_GEN24_EARLY_GENOME,
+                    "Early pre-v2 generation-24 reference",
+                    search_depth=search_depth,
+                    endgame_exact_empties=endgame_exact_empties,
+                ),
+                historical_weight,
+            )
+        )
+    else:
+        opponents.append(
+            (
+                "reference_pre_v2_gen24_late",
+                GeneticPlayer(
+                    PRE_V2_GEN24_LATE_GENOME,
+                    "Late pre-v2 generation-24 reference",
+                    search_depth=search_depth,
+                    endgame_exact_empties=endgame_exact_empties,
+                ),
+                historical_weight,
+            )
+        )
+    return opponents
 
 
 def evaluate_population(
@@ -951,16 +1382,22 @@ def evaluate_population(
         ),
     ]
     if config.minimax_games:
-        anchor_depths = _minimax_anchor_depths(config)
-        anchor_weight = config.minimax_weight / len(anchor_depths)
         baselines.extend(
             (
                 MinimaxPlayer(depth),
                 config.minimax_games,
-                anchor_weight,
+                weight,
             )
-            for depth in anchor_depths
+            for depth, weight in _minimax_anchor_weights(config)
         )
+    baselines.extend(
+        (player, 1, weight)
+        for _, player, weight in _trusted_reference_opponents(
+            config,
+            search_depth=config.training_search_depth,
+            endgame_exact_empties=0,
+        )
+    )
 
     archive_count = min(config.hall_of_fame_opponents, len(hall_of_fame))
     if archive_count:
@@ -1008,6 +1445,7 @@ def _validation_opponents(
     hall_of_fame: Sequence[Individual] = (),
 ) -> list[tuple[str, Player, float]]:
     """Build a deterministic, style-diverse league for champion selection."""
+    fold = (generation // config.validation_every) % config.validation_folds
     opponents: list[tuple[str, Player, float]] = [
         ("random", RandomBaseline(), 0.5),
         ("greedy", GreedyBaseline(), 1.0),
@@ -1022,11 +1460,12 @@ def _validation_opponents(
             1.0,
         ),
     ]
-    anchor_depths = _minimax_anchor_depths(config)
-    anchor_weight = config.minimax_weight / len(anchor_depths)
     opponents.extend(
-        (f"minimax_depth_{depth}", MinimaxPlayer(depth), anchor_weight)
-        for depth in anchor_depths
+        (f"minimax_depth_{depth}", MinimaxPlayer(depth), weight)
+        for depth, weight in _minimax_anchor_weights(config)
+    )
+    opponents.extend(
+        _trusted_reference_opponents(config, historical_index=fold)
     )
 
     archive_count = min(
@@ -1034,7 +1473,6 @@ def _validation_opponents(
         len(hall_of_fame),
     )
     if archive_count:
-        fold = (generation // config.validation_every) % config.validation_folds
         archive_rng = random.Random(
             config.validation_seed + 20_000_033 + fold * 1_000_037
         )
@@ -1056,6 +1494,60 @@ def _validation_opponents(
     return opponents
 
 
+def _validation_shortlist(
+    ranked: Sequence[Individual],
+    champion: Individual | None,
+    config: TrainingConfig,
+) -> list[Individual]:
+    """Mix shallow leaders, a champion neighbor, and trusted starting points."""
+    limit = config.validation_candidates
+    references = (
+        _trusted_reference_individuals(config)
+        if champion is None
+        else []
+    )
+    reserved_neighbors = int(champion is not None and limit > len(references) + 1)
+    shallow_slots = max(1, limit - len(references) - reserved_neighbors)
+    selected = [individual for individual in ranked[:shallow_slots]]
+
+    def add_unique(individual: Individual) -> None:
+        if len(selected) >= limit:
+            return
+        if not any(_same_genome(individual, stored) for stored in selected):
+            selected.append(individual)
+
+    if reserved_neighbors and champion is not None:
+        alternatives = [
+            individual
+            for individual in ranked
+            if not _same_genome(individual, champion)
+            and not any(_same_genome(individual, stored) for stored in selected)
+        ]
+        if alternatives:
+            nearest = min(
+                alternatives,
+                key=lambda individual: sum(
+                    (first - second) ** 2
+                    for first, second in zip(individual.genome, champion.genome)
+                ),
+            )
+            add_unique(nearest)
+
+    for reference in references:
+        matching = next(
+            (
+                individual
+                for individual in ranked
+                if _same_genome(individual, reference)
+            ),
+            reference,
+        )
+        add_unique(matching)
+    for individual in ranked:
+        add_unique(individual)
+    return selected
+
+
 def validate_candidates(
     candidates: Sequence[Individual],
     config: TrainingConfig,
@@ -1067,10 +1559,11 @@ def validate_candidates(
     validation_rng = random.Random(
         config.validation_seed + fold * 1_000_003
     )
-    scenarios = [
-        _make_scenario(validation_rng, config.opening_plies)
-        for _ in range(config.validation_openings)
-    ]
+    scenarios = _stratified_scenarios(
+        validation_rng,
+        config.validation_openings,
+        config.opening_plies,
+    )
     opponents = _validation_opponents(config, generation, hall_of_fame)
     validated: list[Individual] = []
 
@@ -1128,6 +1621,12 @@ def validate_candidates(
             if candidate.origin_generation is not None
             else generation
         )
+        # Feed the deployed-depth result back into parent selection on
+        # validation generations; broad screening remains the cheaper signal.
+        candidate.validation_score = evaluated.validation_score
+        candidate.validation_games = evaluated.validation_games
+        candidate.validation_breakdown = dict(evaluated.validation_breakdown)
+        candidate.origin_generation = evaluated.origin_generation
         validated.append(evaluated)
 
     return max(
@@ -1168,8 +1667,12 @@ def challenge_champion(
     draws = 0
     disc_margin = 0
 
-    for _ in range(config.challenge_openings):
-        scenario = _make_scenario(rng, config.opening_plies)
+    scenarios = _stratified_scenarios(
+        rng,
+        config.challenge_openings,
+        config.opening_plies,
+    )
+    for scenario in scenarios:
         challenger_black, champion_black = _play_color_pair(
             challenger_player,
             champion_player,
@@ -1214,14 +1717,9 @@ def _challenge_passed(
     average_disc_margin: float,
     required_score: float,
 ) -> bool:
-    """Break an exact match-point tie with disc margin."""
-    return (
-        match_score > required_score + 1e-12
-        or (
-            abs(match_score - required_score) <= 1e-12
-            and average_disc_margin > 0.0
-        )
-    )
+    """Require match-point superiority; margin is reporting-only."""
+    del average_disc_margin
+    return match_score + 1e-12 >= required_score
 
 
 def _eligible_for_challenge(
@@ -1235,16 +1733,84 @@ def _eligible_for_challenge(
     )
 
 
+def _promotion_guardrails(
+    challenger: Individual,
+    incumbent: Individual,
+    config: TrainingConfig,
+) -> dict[str, Any]:
+    """Reject candidates that trade away established general strength."""
+    protected_names = {
+        "random",
+        "greedy",
+        "seed_genetic",
+        f"minimax_depth_{config.minimax_depth}",
+    }
+    protected_names.update(
+        name
+        for name in (
+            set(challenger.validation_breakdown)
+            & set(incumbent.validation_breakdown)
+        )
+        if name.startswith("reference_")
+    )
+    regressions: dict[str, float] = {}
+    reference_failures: dict[str, float] = {}
+
+    for name in sorted(protected_names):
+        challenger_result = challenger.validation_breakdown.get(name)
+        incumbent_result = incumbent.validation_breakdown.get(name)
+        if not challenger_result or not incumbent_result:
+            regressions[name] = -1.0
+            continue
+        challenger_score = float(challenger_result["score"])
+        incumbent_score = float(incumbent_result["score"])
+        difference = challenger_score - incumbent_score
+        if difference < -config.promotion_regression_tolerance - 1e-12:
+            regressions[name] = difference
+        if name.startswith("reference_"):
+            if incumbent_score + 1e-12 >= config.reference_min_score:
+                if challenger_score + 1e-12 < config.reference_min_score:
+                    reference_failures[name] = challenger_score
+            elif challenger_score + 1e-12 < incumbent_score:
+                reference_failures[name] = challenger_score
+
+    return {
+        "passed": not regressions and not reference_failures,
+        "regressions": regressions,
+        "reference_failures": reference_failures,
+    }
+
+
+def _selection_score(
+    individual: Individual,
+    validation_parent_weight: float,
+) -> float:
+    """Blend cheap screening with deployed-depth evidence when available."""
+    if individual.validation_score is None:
+        return individual.fitness
+    return (
+        (1.0 - validation_parent_weight) * individual.fitness
+        + validation_parent_weight * individual.validation_score
+    )
+
+
 def _tournament_select(
     population: Sequence[Individual],
     tournament_size: int,
     rng: random.Random,
+    validation_parent_weight: float = 0.0,
 ) -> Individual:
     contenders = rng.sample(
         list(population),
         min(tournament_size, len(population)),
     )
-    return max(contenders, key=lambda individual: individual.fitness)
+    return max(
+        contenders,
+        key=lambda individual: _selection_score(
+            individual,
+            validation_parent_weight,
+        ),
+    )
 
 
 def _crossover(
@@ -1252,12 +1818,27 @@ def _crossover(
     second: Sequence[float],
     rng: random.Random,
     gene_limit: float,
+    normalize_parents: bool = True,
 ) -> list[float]:
-    child: list[float] = []
-    for first_gene, second_gene in zip(first, second):
-        blend = rng.uniform(-0.25, 1.25)
-        value = blend * first_gene + (1.0 - blend) * second_gene
-        child.append(_clamp(value, -gene_limit, gene_limit))
+    first_parent = [float(value) for value in first]
+    second_parent = [float(value) for value in second]
+    if normalize_parents:
+        _normalize_genome_scale(first_parent, gene_limit)
+        _normalize_genome_scale(second_parent, gene_limit)
+    child = [0.0] * min(len(first_parent), len(second_parent))
+
+    # One blend per feature preserves its opening-to-endgame trajectory.
+    # Interpolation stays between the parents; mutation handles extrapolation.
+    feature_count = len(FEATURE_NAMES)
+    for feature_index in range(feature_count):
+        blend = rng.random()
+        for phase_index in range(len(PHASE_NAMES)):
+            index = phase_index * feature_count + feature_index
+            value = (
+                blend * first_parent[index]
+                + (1.0 - blend) * second_parent[index]
+            )
+            child[index] = _clamp(value, -gene_limit, gene_limit)
     return child
 
 
@@ -1267,14 +1848,19 @@ def _mutate(
     rng: random.Random,
     sigma_multiplier: float,
 ) -> None:
-    for index in range(len(genome)):
+    feature_count = len(FEATURE_NAMES)
+    for feature_index in range(feature_count):
         if rng.random() < config.mutation_rate:
-            genome[index] = _clamp(
-                genome[index]
-                + rng.gauss(0.0, config.mutation_sigma * sigma_multiplier),
-                -config.gene_limit,
-                config.gene_limit,
-            )
+            sigma = config.mutation_sigma * sigma_multiplier
+            shared_change = rng.gauss(0.0, sigma * 0.7)
+            for phase_index in range(len(PHASE_NAMES)):
+                index = phase_index * feature_count + feature_index
+                phase_change = rng.gauss(0.0, sigma * 0.3)
+                genome[index] = _clamp(
+                    genome[index] + shared_change + phase_change,
+                    -config.gene_limit,
+                    config.gene_limit,
+                )
 
 
 def _normalize_genome_scale(genome: list[float], gene_limit: float) -> None:
@@ -1308,6 +1894,59 @@ def _random_individual(config: TrainingConfig, rng: random.Random) -> Individual
     return Individual(genome)
 
 
+def _prepared_genome(
+    genome: Sequence[float],
+    config: TrainingConfig,
+) -> list[float]:
+    prepared = _upgrade_legacy_genome(genome)
+    if config.normalize_genomes:
+        _normalize_genome_scale(prepared, config.gene_limit)
+    return prepared
+
+
+def _trusted_reference_individuals(
+    config: TrainingConfig,
+) -> list[Individual]:
+    if config.reference_weight <= 0.0:
+        return []
+    return [
+        Individual(
+            _prepared_genome(V2_GEN24_REFERENCE_GENOME, config),
+            origin_generation=12,
+        ),
+    ]
+
+
+def _mutated_copy(
+    genome: Sequence[float],
+    config: TrainingConfig,
+    rng: random.Random,
+    sigma_multiplier: float,
+) -> list[float]:
+    mutated = [float(value) for value in genome]
+    _mutate(mutated, config, rng, sigma_multiplier)
+    if (
+        mutated == list(genome)
+        and config.mutation_rate > 0.0
+        and config.mutation_sigma > 0.0
+    ):
+        feature_index = rng.randrange(len(FEATURE_NAMES))
+        shared_change = rng.gauss(
+            0.0,
+            config.mutation_sigma * sigma_multiplier,
+        )
+        for phase_index in range(len(PHASE_NAMES)):
+            index = phase_index * len(FEATURE_NAMES) + feature_index
+            mutated[index] = _clamp(
+                mutated[index] + shared_change,
+                -config.gene_limit,
+                config.gene_limit,
+            )
+    if config.normalize_genomes:
+        _normalize_genome_scale(mutated, config.gene_limit)
+    return mutated
+
+
 def reproduce(
     population: Sequence[Individual],
     config: TrainingConfig,
@@ -1316,7 +1955,14 @@ def reproduce(
     sigma_multiplier: float = 1.0,
     immigrant_count: int | None = None,
 ) -> list[Individual]:
-    ranked = sorted(population, key=lambda individual: individual.fitness, reverse=True)
+    ranked = sorted(
+        population,
+        key=lambda individual: _selection_score(
+            individual,
+            config.validation_parent_weight,
+        ),
+        reverse=True,
+    )
     if immigrant_count is None:
         immigrant_count = config.random_immigrants
     maximum_immigrants = max(
@@ -1326,20 +1972,67 @@ def reproduce(
     immigrant_count = min(immigrant_count, maximum_immigrants)
     offspring_target = config.population_size - immigrant_count
     next_population = [
-        Individual(ranked[index].genome.copy())
+        Individual(
+            ranked[index].genome.copy(),
+            origin_generation=ranked[index].origin_generation,
+        )
         for index in range(min(config.elite_count, len(ranked)))
     ]
 
     if champion is not None and len(next_population) < offspring_target:
         champion_genome = tuple(champion.genome)
         if all(tuple(individual.genome) != champion_genome for individual in next_population):
-            next_population.append(Individual(champion.genome.copy()))
+            next_population.append(
+                Individual(
+                    champion.genome.copy(),
+                    origin_generation=champion.origin_generation,
+                )
+            )
+
+    for reference in _trusted_reference_individuals(config):
+        if len(next_population) >= offspring_target:
+            break
+        if all(not _same_genome(reference, stored) for stored in next_population):
+            next_population.append(reference)
+
+    mutation_parent = champion or (
+        next_population[0] if next_population else ranked[0]
+    )
+    for _ in range(config.champion_mutants):
+        if len(next_population) >= offspring_target:
+            break
+        next_population.append(
+            Individual(
+                _mutated_copy(
+                    mutation_parent.genome,
+                    config,
+                    rng,
+                    sigma_multiplier,
+                )
+            )
+        )
 
     while len(next_population) < offspring_target:
-        first = _tournament_select(ranked, config.tournament_size, rng)
-        second = _tournament_select(ranked, config.tournament_size, rng)
+        first = _tournament_select(
+            ranked,
+            config.tournament_size,
+            rng,
+            config.validation_parent_weight,
+        )
+        second = _tournament_select(
+            ranked,
+            config.tournament_size,
+            rng,
+            config.validation_parent_weight,
+        )
         if rng.random() < config.crossover_rate:
-            genome = _crossover(first.genome, second.genome, rng, config.gene_limit)
+            genome = _crossover(
+                first.genome,
+                second.genome,
+                rng,
+                config.gene_limit,
+                normalize_parents=config.normalize_genomes,
+            )
         else:
             genome = first.genome.copy()
         _mutate(genome, config, rng, sigma_multiplier)
@@ -1372,13 +2065,33 @@ def _reproduction_settings(
 
 
 def create_population(config: TrainingConfig, rng: random.Random) -> list[Individual]:
-    seed_genome = list(DEFAULT_SEED_GENOME)
-    if config.normalize_genomes:
-        _normalize_genome_scale(seed_genome, config.gene_limit)
-    population = [Individual(seed_genome)]
+    anchors = [
+        (_prepared_genome(DEFAULT_SEED_GENOME, config), None),
+    ]
+    if config.reference_weight > 0.0:
+        anchors.extend(
+            (
+                (_prepared_genome(PRE_V2_GEN24_EARLY_GENOME, config), 14),
+                (_prepared_genome(PRE_V2_GEN24_LATE_GENOME, config), 12),
+                (_prepared_genome(V2_GEN24_REFERENCE_GENOME, config), 12),
+            )
+        )
+    population = [
+        Individual(genome.copy(), origin_generation=origin_generation)
+        for genome, origin_generation in anchors
+    ]
+    mutant_target = min(
+        config.population_size,
+        len(population) + config.warm_start_mutants,
+    )
+    while len(population) < mutant_target:
+        base, _ = anchors[(len(population) - len(anchors)) % len(anchors)]
+        population.append(
+            Individual(_mutated_copy(base, config, rng, sigma_multiplier=1.0))
+        )
     while len(population) < config.population_size:
         population.append(_random_individual(config, rng))
-    return population
+    return population[: config.population_size]
 
 
 def _genome_diversity(population: Sequence[Individual]) -> float:
@@ -1449,6 +2162,10 @@ def _config_payload(config: TrainingConfig) -> dict[str, Any]:
             config.validation_hall_of_fame_opponents
         ),
         "promotion_validation_tolerance": config.promotion_validation_tolerance,
+        "promotion_regression_tolerance": config.promotion_regression_tolerance,
+        "reference_min_score": config.reference_min_score,
+        "reference_weight": config.reference_weight,
+        "validation_parent_weight": config.validation_parent_weight,
         "challenge_openings": config.challenge_openings,
         "challenge_score": config.challenge_score,
         "hall_of_fame_size": config.hall_of_fame_size,
@@ -1462,6 +2179,8 @@ def _config_payload(config: TrainingConfig) -> dict[str, Any]:
         "gene_limit": config.gene_limit,
         "margin_weight": config.margin_weight,
         "normalize_genomes": config.normalize_genomes,
+        "champion_mutants": config.champion_mutants,
+        "warm_start_mutants": config.warm_start_mutants,
         "random_immigrants": config.random_immigrants,
         "stagnation_generations": config.stagnation_generations,
         "mutation_boost": config.mutation_boost,
@@ -1514,6 +2233,7 @@ def save_checkpoint(
             "rng_state": rng.getstate(),
             "last_challenge": last_challenge,
             "last_recovery_stagnation": last_recovery_stagnation,
+            "hall_of_fame_policy": "accepted_champions_only",
         },
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1524,6 +2244,12 @@ def save_checkpoint(
 
 def _upgrade_version_one_payload(payload: dict[str, Any]) -> dict[str, Any]:
     generation = int(payload.get("generation", 0))
+    legacy_champion = dict(
+        payload.get("best_ever") or payload.get("generation_best") or {}
+    )
+    legacy_resume_champion = dict(
+        payload.get("generation_best") or legacy_champion
+    )
     for key in ("generation_best", "best_ever"):
         if key in payload:
             payload[key] = _individual_payload(_individual_from_payload(payload[key]))
@@ -1532,12 +2258,15 @@ def _upgrade_version_one_payload(payload: dict[str, Any]) -> dict[str, Any]:
         for stored in payload.get("population", [])
     ]
 
-    # Raw co-evolution fitness from different generations is not comparable.
-    # For a legacy file, prefer its current generation winner over stale
-    # best_ever data until a version-2 validation champion is produced.
-    champion = dict(payload.get("generation_best", payload.get("best_ever", {})))
+    # Version 1 deliberately deployed best_ever, which exact playback retains.
+    # Resume from the current generation winner because co-evolution fitness
+    # values from different generations are not directly comparable.
+    champion = _individual_payload(
+        _individual_from_payload(legacy_resume_champion)
+    )
     champion["origin_generation"] = generation
     payload["champion"] = champion
+    payload["legacy_champion"] = legacy_champion
     payload["source_version"] = 1
     payload["version"] = CHECKPOINT_VERSION
     payload["feature_names"] = FEATURE_NAMES
@@ -1566,6 +2295,8 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
         raise ValueError(f"Unsupported genetic checkpoint version {version!r}")
     if version == 1:
         payload = _upgrade_version_one_payload(payload)
+    else:
+        payload.setdefault("source_version", version)
 
     for key in ("generation_best", "validation_leader", "champion", "best_ever"):
         stored = payload.get(key)
@@ -1586,13 +2317,19 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
     return payload
 
 
-def _restore_population(payload: dict[str, Any]) -> list[Individual]:
+def _restore_population(
+    payload: dict[str, Any],
+    config: TrainingConfig | None = None,
+) -> list[Individual]:
     population = [
         _individual_from_payload(stored)
         for stored in payload.get("population", [])
     ]
     if len(population) < 2:
         raise ValueError("Checkpoint does not contain a usable population")
+    if config is not None and config.normalize_genomes:
+        for individual in population:
+            _normalize_genome_scale(individual.genome, config.gene_limit)
     return population
 
 
@@ -1610,32 +2347,19 @@ def _restore_hall_of_fame(
 ) -> list[Individual]:
     hall_of_fame: list[Individual] = []
     stored_hall = payload.get("hall_of_fame")
-    if stored_hall is not None:
+    archive_policy = payload.get("training_state", {}).get(
+        "hall_of_fame_policy"
+    )
+    if stored_hall is not None and archive_policy == "accepted_champions_only":
         for stored in stored_hall:
             _add_to_hall_of_fame(
                 hall_of_fame,
                 _individual_from_payload(stored),
                 maximum_size,
             )
-    else:
-        # Version-2 checkpoints written before the archive was introduced can
-        # recover their historical champions from neighboring periodic saves.
-        resume_generation = int(payload.get("generation", 0))
-        for candidate_path in sorted(checkpoint_path.parent.glob("genetic_gen_*.json")):
-            try:
-                candidate_payload = load_checkpoint(candidate_path)
-                candidate_generation = int(candidate_payload.get("generation", 0))
-                if candidate_generation > resume_generation:
-                    continue
-                stored = candidate_payload.get("champion")
-                if stored:
-                    _add_to_hall_of_fame(
-                        hall_of_fame,
-                        _individual_from_payload(stored),
-                        maximum_size,
-                    )
-            except ValueError:
-                continue
+    # Older archives admitted every validation leader, including rejected
+    # challengers. Do not carry that contaminated FIFO state into version 3.
+    del checkpoint_path
 
     stored_champion = payload.get("champion")
     if stored_champion:
@@ -1668,13 +2392,19 @@ def train(config: TrainingConfig) -> Path:
     last_recovery_stagnation = 0
     last_challenge: dict[str, Any] | None = None
     last_validation_leader: Individual | None = None
+    migrating_checkpoint = False
     if config.resume is not None:
         resume_path = Path(config.resume).expanduser().resolve()
         resume_payload = load_checkpoint(resume_path)
-        evaluated_population = _restore_population(resume_payload)
+        migrating_checkpoint = int(
+            resume_payload.get("source_version", resume_payload["version"])
+        ) < CHECKPOINT_VERSION
+        evaluated_population = _restore_population(resume_payload, config)
         stored_champion = resume_payload.get("champion")
         if stored_champion:
             champion = _individual_from_payload(stored_champion)
+            if config.normalize_genomes:
+                _normalize_genome_scale(champion.genome, config.gene_limit)
         stored_validation_leader = resume_payload.get("validation_leader")
         if stored_validation_leader:
             last_validation_leader = _individual_from_payload(
@@ -1685,6 +2415,9 @@ def train(config: TrainingConfig) -> Path:
             resume_path,
             config.hall_of_fame_size,
         )
+        if config.normalize_genomes:
+            for historical in hall_of_fame:
+                _normalize_genome_scale(historical.genome, config.gene_limit)
         training_state = resume_payload.get("training_state", {})
         stagnation_count = int(training_state.get("validation_stagnation", 0))
         last_recovery_stagnation = int(
@@ -1702,6 +2435,10 @@ def train(config: TrainingConfig) -> Path:
         start_generation = int(resume_payload["generation"]) + 1
         if start_generation >= config.generations:
             return resume_path
+        if migrating_checkpoint:
+            stagnation_count = 0
+            last_recovery_stagnation = 0
+            last_challenge = None
         sigma_multiplier, immigrant_count, recovery = _reproduction_settings(
             config,
             stagnation_count,
@@ -1715,6 +2452,12 @@ def train(config: TrainingConfig) -> Path:
             sigma_multiplier=sigma_multiplier,
             immigrant_count=immigrant_count,
         )
+        if migrating_checkpoint:
+            # Old validation scores and promotion decisions used a different
+            # league. Keep the old champion in the population/archive, but let
+            # the v3 league select a fresh incumbent that includes the protected
+            # v2 generation-24 anchor.
+            champion = None
         if recovery:
             last_recovery_stagnation = stagnation_count
             print(
@@ -1724,7 +2467,8 @@ def train(config: TrainingConfig) -> Path:
             )
         print(
             f"Resuming at generation {start_generation + 1} from {resume_path} "
-            f"with {len(hall_of_fame)} hall-of-fame genomes."
+            f"with {len(hall_of_fame)} hall-of-fame genomes"
+            f"{'; revalidating the champion under v3' if migrating_checkpoint else ''}."
         )
     else:
         population = create_population(config, rng)
@@ -1749,13 +2493,14 @@ def train(config: TrainingConfig) -> Path:
         )
         validation_leader: Individual | None = None
         challenge_result: dict[str, Any] | None = None
+        promotion_guardrails: dict[str, Any] | None = None
         validation_advantage: float | None = None
         promoted = False
         validation_elapsed = 0.0
         if should_validate:
             validation_started = time.perf_counter()
             validation_leader = validate_candidates(
-                ranked,
+                _validation_shortlist(ranked, champion, config),
                 config,
                 generation,
                 hall_of_fame,
@@ -1783,10 +2528,18 @@ def train(config: TrainingConfig) -> Path:
                     validation_leader.validation_score
                     - incumbent.validation_score
                 )
+                promotion_guardrails = _promotion_guardrails(
+                    validation_leader,
+                    incumbent,
+                    config,
+                )
                 if _same_genome(validation_leader, champion):
                     champion = incumbent
                     stagnation_count += 1
-                elif _eligible_for_challenge(validation_advantage, config):
+                elif (
+                    _eligible_for_challenge(validation_advantage, config)
+                    and promotion_guardrails["passed"]
+                ):
                     challenge_result = challenge_champion(
                         validation_leader,
                         incumbent,
@@ -1819,11 +2572,6 @@ def train(config: TrainingConfig) -> Path:
                 else:
                     champion = incumbent
                     stagnation_count += 1
-            _add_to_hall_of_fame(
-                hall_of_fame,
-                validation_leader,
-                config.hall_of_fame_size,
-            )
             validation_elapsed = time.perf_counter() - validation_started
         assert champion is not None
 
@@ -1848,6 +2596,17 @@ def train(config: TrainingConfig) -> Path:
             )
         elif promoted:
             promotion_text = ", champion=promoted"
+        elif promotion_guardrails is not None and not promotion_guardrails["passed"]:
+            failed_names = sorted(
+                {
+                    *promotion_guardrails["regressions"],
+                    *promotion_guardrails["reference_failures"],
+                }
+            )
+            promotion_text = (
+                f", validation_delta={validation_advantage:+.4f}, "
+                f"guardrail=held ({', '.join(failed_names)})"
+            )
         elif validation_advantage is not None:
             promotion_text = (
                 f", validation_delta={validation_advantage:+.4f}, champion=held"
@@ -1982,7 +2741,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=defaults.minimax_depth,
         help="maximum anchor depth; every depth from 1 through this value is used",
     )
-    parser.add_argument("--minimax-weight", type=float, default=defaults.minimax_weight)
+    parser.add_argument(
+        "--minimax-weight",
+        type=float,
+        default=defaults.minimax_weight,
+        help=(
+            "fitness weight for the deepest minimax target; shallower depths "
+            "together receive an additional half of this weight"
+        ),
+    )
     parser.add_argument(
         "--training-search-depth",
         type=int,
@@ -2050,6 +2817,33 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--promotion-regression-tolerance",
+        type=float,
+        default=defaults.promotion_regression_tolerance,
+        help="largest allowed validation-score drop against a protected opponent",
+    )
+    parser.add_argument(
+        "--reference-min-score",
+        type=float,
+        default=defaults.reference_min_score,
+        help="minimum match-point score required against each trusted reference",
+    )
+    parser.add_argument(
+        "--reference-weight",
+        type=float,
+        default=defaults.reference_weight,
+        help=(
+            "total fitness weight for trusted reference players; zero disables "
+            "reference opponents and warm starts"
+        ),
+    )
+    parser.add_argument(
+        "--validation-parent-weight",
+        type=float,
+        default=defaults.validation_parent_weight,
+        help="deployed-depth validation contribution to parent selection",
+    )
+    parser.add_argument(
         "--challenge-openings",
         type=int,
         default=defaults.challenge_openings,
@@ -2094,6 +2888,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="disable behavior-preserving unit-RMS normalization of new genomes",
     )
     parser.add_argument(
+        "--champion-mutants",
+        type=int,
+        default=defaults.champion_mutants,
+        help="local mutations of the protected champion retained each generation",
+    )
+    parser.add_argument(
+        "--warm-start-mutants",
+        type=int,
+        default=defaults.warm_start_mutants,
+        help="mutated seed/reference genomes used to initialize a new run",
+    )
+    parser.add_argument(
         "--random-immigrants",
         type=int,
         default=defaults.random_immigrants,
@@ -2130,8 +2936,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--resume",
         type=Path,
         help=(
-            "Resume from a version-1 or version-2 checkpoint. --generations "
-            "is the total target generation count, not an additional count."
+            "Resume from a version-1, version-2, or version-3 checkpoint. "
+            "--generations is the total target generation count, not an "
+            "additional count."
         ),
     )
     return parser.parse_args(argv)
@@ -2162,6 +2969,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.validation_hall_of_fame_opponents
         ),
         promotion_validation_tolerance=args.promotion_validation_tolerance,
+        promotion_regression_tolerance=args.promotion_regression_tolerance,
+        reference_min_score=args.reference_min_score,
+        reference_weight=args.reference_weight,
+        validation_parent_weight=args.validation_parent_weight,
         challenge_openings=args.challenge_openings,
         challenge_score=args.challenge_score,
         hall_of_fame_size=args.hall_of_fame_size,
@@ -2175,6 +2986,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         gene_limit=args.gene_limit,
         margin_weight=args.margin_weight,
         normalize_genomes=args.normalize_genomes,
+        champion_mutants=args.champion_mutants,
+        warm_start_mutants=args.warm_start_mutants,
         random_immigrants=args.random_immigrants,
         stagnation_generations=args.stagnation_generations,
         mutation_boost=args.mutation_boost,
