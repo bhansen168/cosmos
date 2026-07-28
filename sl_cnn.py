@@ -121,7 +121,7 @@ class CompSupervisedCNN:
                     self.games.extend(pickle.load(fRef))
         print(f"Loaded {len(self.games):,} formatted games ready for training.")
 
-    def train(self, savePath="models/cnn_model.pth", epochs=20, batch_size=256):
+    def train(self, savePath="models/cnn_model.pt", epochs=20, batch_size=256):
         X_list = []
         y_list = []
         
@@ -202,7 +202,7 @@ class CNNAgent:
     def __init__(self, model_path):
         self.device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
         self.model = OthelloCNN()
-        self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=False))
         self.model.to(self.device)
         self.model.eval()
 

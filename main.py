@@ -158,7 +158,10 @@ class Main:
 
         #save pick
         self.computer.pick()
-        self.compLoc = self.game.last.copy()
+        if self.game.last is not None:
+            self.compLoc = self.game.last.copy()
+        else:
+            self.compLoc = None
 
         #revert state
         self.game.last = lastBefore
