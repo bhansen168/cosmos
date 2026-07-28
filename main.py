@@ -80,7 +80,6 @@ class Main:
         "genetic_25": ("Ariel (G25-2)", [GeneticComputer,25,None]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25)),#GeneticComputer25),
         "genetic_d5": ("Caliban (G50-5)", [GeneticComputer,None,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,depth=5)),#GeneticComputer5),
         "genetic_25_d5": ("Stephano (G25-5)", [GeneticComputer,25,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25,depth=5)),#GeneticComputer25_5),
-        "cnn-supervised": ("Coriolanus (SL-CNN)", ComputerCNN),
         "xgb-supervised": ("Horatio (SL-XGB)", SupervisedComputer),
         "minimax-2": ("Hotspur (MM-2)", lambda g, c: create_minimax_computer(g, c, depth=2)),
         "minimax-4": ("Henry V (MM-4)", lambda g, c: create_minimax_computer(g, c, depth=4)),

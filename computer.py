@@ -392,26 +392,6 @@ def create_alphazero_computer(
         symmetry_ensemble=symmetry_ensemble,
     )
 
-class ComputerCNN(Computer):
-    PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","cnn_model.pt")
-    def __init__(self,game=None,color=None,path=None):
-        super().__init__(game,color)
-
-        if path is None:
-            path = ComputerCNN.PATH
-        self.path = os.path.abspath(path)
-        self.agent = CNNAgent(self.path)
-        self.name = f"Corio supervised ({os.path.basename(self.path)})"
-
-    def pick(self):
-        indexed_legal = [
-            coord_to_index_sup(move.y,move.x) for move in self.game.legal_moves(self.color)
-        ]
-        state = encode_state_sup(self.game.board,self.color)
-        
-        x,y = self.agent.pick(indexed_legal, state, self.color, asCoord=True)
-        self.game.place_piece(self.color,x,y)
-
 class ComputerSupervised(Computer):
     #formerly known as Computer3
     PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),"models","synthprune-0.5-20260723144438.bard")
