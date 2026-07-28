@@ -188,7 +188,7 @@ class CompSupervisedCNN:
             val_acc = (correct / total) * 100
 
 
-            finish = redict_finish(startDT,(epoch+1)/epochs)
+            finish = predict_finish(startDT,(epoch+1)/epochs)
             print(f"Epoch {epoch+1:02d}/{epochs:02d} | Train loss (mlogloss): {epoch_train_loss:.4f} | Val loss: {epoch_val_loss:.4f} | Val Accuracy: {val_acc:.2f}% | Elapsed: {str(datetime.now() - startDT).split('.')[0]} | Finish at: {str(finish).split('.')[0]}")
             
         os.makedirs(os.path.dirname(savePath), exist_ok=True)
@@ -245,4 +245,5 @@ class CNNAgent:
 
 if __name__ == "__main__":
     trainer = CompSupervisedCNN()
-    trainer.train(epochs=15, batch_size=256)
+    trainer.train(epochs=25, batch_size=64)
+    #trainer.train(epochs=15, batch_size=256)

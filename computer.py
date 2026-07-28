@@ -405,9 +405,9 @@ class ComputerCNN(Computer):
 
     def pick(self):
         indexed_legal = [
-            coord_to_index_sup(move.y,move.x) for move in legal_moves
+            coord_to_index_sup(move.y,move.x) for move in self.game.legal_moves(self.color)
         ]
-        state = encode_state_sup(game.board,color)
+        state = encode_state_sup(game.board,self.color)
         return self.agent.pick(indexed_legal, state, self.color, asCoord=True)
 
 class ComputerSupervised(Computer):

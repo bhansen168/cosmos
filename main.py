@@ -16,7 +16,7 @@ from computer import (
     ComputerPPO,
     ComputerSupervised as SupervisedComputer,
     GeneticComputer,
-    create_minimax_computer,
+    create_minimax_computer,ComputerCNN
 )
 def latest_dqn_checkpoint(folder="models/checkpoints", version="v02"):
     """Return the path to the highest-episode DQN checkpoint in `folder`."""
@@ -80,8 +80,8 @@ class Main:
         "genetic_25": ("Ariel (G25-2)", [GeneticComputer,25,None]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25)),#GeneticComputer25),
         "genetic_d5": ("Caliban (G50-5)", [GeneticComputer,None,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,depth=5)),#GeneticComputer5),
         "genetic_25_d5": ("Stephano (G25-5)", [GeneticComputer,25,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25,depth=5)),#GeneticComputer25_5),
-
-        "supervised": ("Horatio (SL)", SupervisedComputer),
+        "cnn-supervised": ("Coriolanus (SL-CNN)", ComputerCNN),
+        "xgb-supervised": ("Horatio (SL-XGB)", SupervisedComputer),
         "minimax-2": ("Hotspur (MM-2)", lambda g, c: create_minimax_computer(g, c, depth=2)),
         "minimax-4": ("Henry V (MM-4)", lambda g, c: create_minimax_computer(g, c, depth=4)),
         "minimax-6": ("Octavius (MM-6)", lambda g, c: create_minimax_computer(g, c, depth=6)),
@@ -120,7 +120,7 @@ class Main:
         self.thread =  None
 
         self.showLegal = False
-        self.showEval = True
+        self.showEval = Main.TESTING_ML
         self.printed = False
         self.clickDict = {}
 
@@ -215,7 +215,14 @@ class Main:
         score = self.game.get_score()
 
 
-        texts = ["Scores:",f"Black: {score[Game.BLACK]}",f"White: {score[Game.WHITE]}"]
+        if self.mode == "player":
+            texts = ["Scores:",f"Black: {score[Game.BLACK]}",f"White: {score[Game.WHITE]}"]
+        else:
+            blackName = (self.computer_name[:self.computer_name.index("(")-1] if self.compColor == Game.BLACK else "You") + " (B)"
+            whiteName = (self.computer_name[:self.computer_name.index("(")-1] if self.compColor == Game.WHITE else "You") + " (W)"
+
+            texts = ["Scores:",f"{blackName}: {score[Game.BLACK]}",f"{whiteName}: {score[Game.WHITE]}"]
+            
         for i in range(len(texts)):#text in texts:
             surf = self.font.render(texts[i],True,Main.BLACK)
             screen.blit(surf,(x,y + i * 30))
