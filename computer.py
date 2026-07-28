@@ -7,7 +7,7 @@ from computer_supervised import (
     load_agent as load_agent_sup,
 )
 
-from testcnn import CNNAgent
+from sl_cnn import CNNAgent
 
 from datetime import datetime
 
