@@ -310,7 +310,7 @@ class Main:
                 # Print error to console for debugging
                 print(f"Value display error: {e}")
 
-    def draw_title(self,screen):
+    def draw_title(self,screen,hideDebugToggle = True):
         text = self.bigFont.render("Tempest",True,Main.WHITE)
         rect = text.get_rect()
         rect.center = (self.width/2,self.height/8)
@@ -341,8 +341,9 @@ class Main:
             self.clickDict["color"] = box
 
         # Eval toggle
-        toggle_rect = self._draw_toggle_custom(screen, self.width/2, self.height - 40, "Show position evaluation", self.showEval)
-        self.clickDict["eval_toggle"] = toggle_rect
+        if not hideDebugToggle:
+            toggle_rect = self._draw_toggle_custom(screen, self.width/2, self.height - 40, "Show position evaluation", self.showEval)
+            self.clickDict["eval_toggle"] = toggle_rect
 
 
         
