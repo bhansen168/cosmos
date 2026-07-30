@@ -90,14 +90,14 @@ class Main:
 
     TESTING_ML = False
     FPS = 60
+
+    BASE_HEIGHT = 600
+    BASE_WIDTH = 800
     
     def __init__(self,side=8,mode = "dqn",compColor = "W"):
         #mode is computer: pvcom
         #mode is player: pvp
         self.running = True
-
-        self.width = 800
-        self.height = 600
   
         self.subtitle = pygame.font.Font("williamshakespearewf.ttf",45)
         self.modeFont = pygame.font.Font("Augusta.ttf",35)
@@ -134,6 +134,12 @@ class Main:
         self.switch_comp() #init necessary stuff
         self.reset()
 
+    def get_width(self):
+        return pygame.display.get_window_size()[0]
+
+    def get_height(self):
+        return pygame.display.get_window_size()[1]
+
     def init_feathers(self):
         self.featherSurfR = pygame.Surface((230,435),pygame.SRCALPHA)
         img = pygame.transform.scale(pygame.image.load("quill2b.png"),(226,435))
@@ -144,12 +150,10 @@ class Main:
         self.featherSurfR.blit(img,(0,0))
         self.featherSurfR.blit(pygame.transform.flip(img2,True,False),(0,0))
         self.featherRectR = self.featherSurfR.get_rect()
-        self.featherRectR.center = (5*self.width/6,self.height/2)
 
         self.featherSurfL = pygame.transform.flip(self.featherSurfR,True,False)
         self.featherRectL = self.featherSurfL.get_rect()
-        self.featherRectL.center = (self.width/6,self.height/2)
-
+        
     def comp_pick(self):
         #save previous state
         oldBoard = deepcopy(self.game.board)
@@ -202,7 +206,7 @@ class Main:
     def blit_turn(self,screen):
         text = self.font.render(("Black's" if self.activePlayerIndex+1 == Game.BLACK else "White's")+" Turn",True,Main.BLACK)
 
-        screen.blit(text,(self.width-150,25))
+        screen.blit(text,(self.get_width()-150,25))
 
     @staticmethod
     def _fit_text(font, text, width):
@@ -305,7 +309,7 @@ class Main:
                 val_text = f"{value:+.3f}"
                 val_color = Main.LIGHT_GREEN if value > 0 else (Main.LIGHT_RED if value < 0 else Main.BLACK)
                 surf = self.font.render(val_text, True, val_color)
-                screen.blit(surf, (self.width-180, 180))
+                screen.blit(surf, (self.get_width()-180, 180))
             except Exception as e:
                 # Print error to console for debugging
                 print(f"Value display error: {e}")
@@ -313,28 +317,28 @@ class Main:
     def draw_title(self,screen,hideDebugToggle = True):
         text = self.bigFont.render("Tempest",True,Main.WHITE)
         rect = text.get_rect()
-        rect.center = (self.width/2,self.height/8)
+        rect.center = (self.get_width()/2,self.get_height()/8)
         screen.blit(text,rect)
 
         subtitle = self.subtitle.render("Automated Othello Bot",True,Main.WHITE)
         rect = subtitle.get_rect()
-        rect.center = (self.width/2,self.height/8 + 55)
+        rect.center = (self.get_width()/2,self.get_height()/8 + 55)
         screen.blit(subtitle,rect)
         
 
         text2 = self.modeFont.render(f"Mode{('l' if self.computer_name.lower()!='The Players (PvP)' else '')}: "+str(self.computer_name),True,Main.WHITE)
         rect = text2.get_rect()
-        rect.center = (self.width/2,self.height/4 + 45)
+        rect.center = (self.get_width()/2,self.get_height()/4 + 45)
         screen.blit(text2,rect)
 
         if self.pickColor and "pvp" not in self.computer_name.lower():
             #draw boxes
             text3 = self.modeFont.render("Bot plays as:",True,Main.WHITE)
             rect = text3.get_rect()
-            rect.centery = self.height/2-30
-            rect.x = self.width/2-30-rect.width/2-5
+            rect.centery = self.get_height()/2-30
+            rect.x = self.get_width()/2-30-rect.width/2-5
 
-            box  = pygame.Rect(rect.x + rect.width+ 10,self.height/2-55,50,50)
+            box  = pygame.Rect(rect.x + rect.width+ 10,self.get_height()/2-55,50,50)
             #pygame.draw.rect(screen,(Main.WHITE if self.compColor == "W" else Main.BLACK),box)
             pygame.draw.circle(screen,(Main.WHITE if self.compColor == Game.WHITE else Main.BLACK),box.center,25)
             screen.blit(text3,rect)
@@ -342,12 +346,12 @@ class Main:
 
         # Eval toggle
         if not hideDebugToggle:
-            toggle_rect = self._draw_toggle_custom(screen, self.width/2, self.height - 40, "Show position evaluation", self.showEval)
+            toggle_rect = self._draw_toggle_custom(screen, self.get_width()/2, self.get_height() - 40, "Show position evaluation", self.showEval)
             self.clickDict["eval_toggle"] = toggle_rect
 
 
         
-        button = pygame.Rect(self.width/2 - 60, self.height*5/8 - 30,120,60)
+        button = pygame.Rect(self.get_width()/2 - 60, self.get_height()*5/8 - 30,120,60)
         pygame.draw.rect(screen,Main.GRAY,button,border_radius = 5)
         self.clickDict["begin"] = button
         buttonText = self.subtitle.render("Begin Game",True,Main.BLACK)
@@ -355,12 +359,15 @@ class Main:
         rect.center = button.center
         screen.blit(buttonText,rect)
 
+
+        self.featherRectR.center = (5*self.get_width()/6,self.get_height()/2)
+        self.featherRectL.center = (self.get_width()/6,self.get_height()/2)
         screen.blit(self.featherSurfR,self.featherRectR)
         screen.blit(self.featherSurfL,self.featherRectL)
         
         """
         #Alternate style
-        button = pygame.Rect(self.width/2 - 60, self.height/2 - 30,120,60)
+        button = pygame.Rect(self.get_width()/2 - 60, self.get_height()/2 - 30,120,60)
         pygame.draw.rect(screen,Main.WHITE,button,width=2,border_radius = 5)
         self.clickDict["begin"] = button
         buttonText = self.subtitle.render("Begin Game",True,Main.WHITE)
@@ -377,16 +384,16 @@ class Main:
 
             self.blit_turn(screen)
 
-            self.draw_score(screen,self.width-180,80)
+            self.draw_score(screen,self.get_width()-180,80)
 
             if self.close_timeout is not None:
                 text = self.bigFont.render("GAME OVER",True,Main.PINK)
                 rect = text.get_rect()
-                rect.centerx = self.width/2
-                rect.bottom = self.height - 10
+                rect.centerx = self.get_width()/2
+                rect.bottom = self.get_height() - 10
                 screen.blit(text,rect)
 
-            self.clickDict["toggle"] = self.draw_toggle_bar(screen,self.width-180,self.height/2)
+            self.clickDict["toggle"] = self.draw_toggle_bar(screen,self.get_width()-180,self.get_height()/2)
 
             if self.showLegal:
                 self.draw_legal(screen)
@@ -415,7 +422,7 @@ class Main:
 
 
     def main(self):
-        screen = pygame.display.set_mode((self.width,self.height))
+        screen = pygame.display.set_mode((Main.BASE_WIDTH,Main.BASE_HEIGHT), pygame.RESIZABLE)
 
         icon_image = pygame.image.load('logo.png')  # Relative path to your 32x32 image
         pygame.display.set_icon(icon_image)
@@ -447,7 +454,15 @@ class Main:
                         elif event.key == pygame.K_c:
                             self.compColor = (Game.BLACK if self.compColor == Game.WHITE else Game.WHITE)
                         
+                elif event.type == pygame.WINDOWRESIZED:
+                    width = max(event.dict["x"], Main.BASE_WIDTH)
+                    height = max(event.dict["y"], Main.BASE_HEIGHT)
+                    # Reset the mode with the corrected boundaries
+                    screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
 
+                    print(width * 0.08, height * 0.1)
+                    Game.SQUARE = min(width * 0.08, height * 0.1)
+                    Game.RADIUS = int(Game.SQUARE * 0.3)
                 
                     
                     # Allow other keydowns to pass through (though we don't handle them)
