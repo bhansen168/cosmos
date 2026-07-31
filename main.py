@@ -73,9 +73,6 @@ class Main:
     
     AI_MODES = {
         "genetic_d1": ("Aeolus (G50-1)", [GeneticComputer,None,1]),
-        "dqn": ("Hamlet (DQN)", ComputerDQN),
-        "ppo": ("Macbeth (PPO-2)", ComputerPPO),
-        "alphazero": ("King Lear (AZ-512)", ComputerAlphaZero),
         "genetic": ("Prospero (G50-2)", [GeneticComputer,None,None]),#create_genetic_comp(pathBase = GEN_PATHBASE)),#GeneticComputer),
         "genetic_25": ("Ariel (G25-2)", [GeneticComputer,25,None]),#create_genetic_comp(pathBase = GEN_PATHBASE,generation=25)),#GeneticComputer25),
         "genetic_d5": ("Caliban (G50-5)", [GeneticComputer,None,5]),#create_genetic_comp(pathBase = GEN_PATHBASE,depth=5)),#GeneticComputer5),
@@ -84,6 +81,9 @@ class Main:
         "minimax-2": ("Hotspur (MM-2)", lambda g, c: create_minimax_computer(g, c, depth=2)),
         "minimax-4": ("Henry V (MM-4)", lambda g, c: create_minimax_computer(g, c, depth=4)),
         "minimax-6": ("Octavius (MM-6)", lambda g, c: create_minimax_computer(g, c, depth=6)),
+        "dqn": ("Hamlet (DQN)", ComputerDQN),
+        "ppo": ("Macbeth (PPO-2)", ComputerPPO),
+        "alphazero": ("King Lear (AZ-512)", ComputerAlphaZero),
     }
     AI_MODES.update(discover_dqn_checkpoints())
 
@@ -105,6 +105,7 @@ class Main:
         #self.subtitle = pygame.font.Font("Shakespeare-First-Folio.ttf",15)
         self.bigFont = pygame.font.Font("Shakespeare-First-Folio.ttf",40)#pygame.font.SysFont("Comic Sans",40)
         self.font = pygame.font.SysFont("Comic Sans",20) #for gameplay
+        self.byfont = pygame.font.Font("Shakespeare-First-Folio.ttf",10)
         
         self.mode = mode
         self.computer = None
@@ -349,7 +350,11 @@ class Main:
             toggle_rect = self._draw_toggle_custom(screen, self.get_width()/2, self.get_height() - 40, "Show position evaluation", self.showEval)
             self.clickDict["eval_toggle"] = toggle_rect
 
-
+        nameText = self.byfont.render("By Alan Lin, Ben Hansen, and Ronald Wang",True,Main.WHITE)
+        rect = nameText.get_rect()
+        rect.center = (self.get_width()/2,self.get_height()*0.95)
+        screen.blit(nameText,rect)
+    
         
         button = pygame.Rect(self.get_width()/2 - 60, self.get_height()*5/8 - 30,120,60)
         pygame.draw.rect(screen,Main.GRAY,button,border_radius = 5)
@@ -460,7 +465,6 @@ class Main:
                     # Reset the mode with the corrected boundaries
                     screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
 
-                    print(width * 0.08, height * 0.1)
                     Game.SQUARE = min(width * 0.08, height * 0.1)
                     Game.RADIUS = int(Game.SQUARE * 0.3)
                 
@@ -474,7 +478,7 @@ class Main:
                             if sq is not None:
                                 if self.computer is None or self.activePlayerIndex+1 != self.computer.color:
                                     x,y = sq
-                                    successful = self.game.place_piece(self.activePlayerIndex+1,x,y)
+                                    successful = self.game.place_piece(self.activePlayerIndex+1,int(x),int(y))
                                     if successful:
                                         self.next_turn()
 
