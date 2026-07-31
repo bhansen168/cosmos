@@ -102,7 +102,7 @@ class Main:
         self.subtitle = pygame.font.Font("williamshakespearewf.ttf",45)
         self.modeFont = pygame.font.Font("Augusta.ttf",35)
         self.bigFont = pygame.font.Font("Shakespeare-First-Folio.ttf",40)
-        self.font = pygame.font.SysFont("Garamond",20,bold=True) #for gameplay
+        self.font = pygame.font.SysFont("Garamond",20) #for gameplay
         #self.font = pygame.font.Font("Shakespeare-First-Folio.ttf",15)
         self.byfont = pygame.font.Font("Shakespeare-First-Folio.ttf",10)
         
@@ -384,7 +384,7 @@ class Main:
         if self.screen == "game":
             self.clickDict = {}
             self.game.draw_board(screen)
-            self.game.label_board(screen,self.byfont)
+            self.game.label_board(screen,self.font)#self.byfont)
 
             self.blit_turn(screen)
 
