@@ -98,14 +98,14 @@ class Game:
         TX,TY = Game.TOP_LEFT
         HORIZONTAL = "ABCDEFGH"
         for i in range(self.side):
-            text = font.render(HORIZONTAL[i],True,Game.C_WHITE)
+            text = font.render(HORIZONTAL[i],True,Game.C_BLACK)
             rect = text.get_rect()
             rect.bottom = TY
             rect.centerx = TX + (i+0.5) * Game.SQUARE
             screen.blit(text,rect)
 
         for i2 in range(self.side):
-            text = font.render(str(i2+1),True,Game.C_WHITE)
+            text = font.render(str(i2+1),True,Game.C_BLACK)
             rect = text.get_rect()
             rect.centerx = TX/2
             rect.centery = TY + (i2+0.5) * Game.SQUARE
