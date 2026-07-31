@@ -145,7 +145,10 @@ class Main:
         rect.center = (x,y)
         pygame.draw.rect(screen,Main.GRAY,rect,border_radius=10)
 
-        TEXT = "HOME"
+        if self.mode == "player":
+            TEXT = "Home"
+        else:
+            TEXT = "Resign"
         if gameOver:
             TEXT += f" ({int(round(15 - (datetime.now() - self.close_timeout).total_seconds()))})"
         
@@ -336,6 +339,23 @@ class Main:
                 # Print error to console for debugging
                 print(f"Value display error: {e}")
 
+    def draw_comp_index(self,screen,centery):
+        MARGIN = 10
+        RADIUS = 3
+        
+        modes = list(Main.AI_MODES.keys()) + ["player"]
+        index = modes.index(self.mode)
+        options = len(modes)
+
+        length = MARGIN * (options-1) + RADIUS * 2 * options
+
+        x0 = self.get_width() / 2 - length/2 + RADIUS #center of first circle
+
+        for i in range(options):
+            pygame.draw.circle(screen,(Main.BLACK if i == index else Main.WHITE),(x0+i*(RADIUS*2+MARGIN),centery),RADIUS)
+        
+        
+
     def draw_title(self,screen,hideDebugToggle = True):
         text = self.bigFont.render("Tempest",True,Main.WHITE)
         rect = text.get_rect()
@@ -348,10 +368,12 @@ class Main:
         screen.blit(subtitle,rect)
         
 
-        text2 = self.modeFont.render(f"Mode{('l' if self.computer_name.lower()!='The Players (PvP)' else '')}: "+str(self.computer_name),True,Main.WHITE)
+        text2 = self.modeFont.render(f"Mode{('l' if self.computer_name.lower()!='the players (pvp)' else '')}: "+str(self.computer_name),True,Main.WHITE)
         rect = text2.get_rect()
         rect.center = (self.get_width()/2,self.get_height()/4 + 45)
         screen.blit(text2,rect)
+
+        self.draw_comp_index(screen,self.get_height()/4 + 70)
 
         if self.pickColor and "pvp" not in self.computer_name.lower():
             #draw boxes
