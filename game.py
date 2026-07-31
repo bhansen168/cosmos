@@ -27,11 +27,12 @@ class Game:
     C_LIGREEN = "#5CED73"
     C_SHADOW = (78,83,59)#(85,107,47)#(80,80,80)
 
-    SHADOW_OFFSET = 2
     SHADOW_DIRS = [1,1]
 
     SQUARE = 60
-    RADIUS = int(SQUARE * 0.3)
+    RADIUS = int(SQUARE * 0.3) #18 normally
+
+    SHADOW_OFFSET = RADIUS/9
 
     TOP_LEFT = (20,20)
 
@@ -51,6 +52,11 @@ class Game:
         self._set_middle()
 
         self.save = save
+
+    def set_square_size(self,sq):
+        Game.SQUARE = sq
+        Game.RADIUS = int(sq*0.3)
+        Game.SHADOW_OFFSET = int(Game.RADIUS/9)
 
     def copy(self):
         out = Game(side = self.side,save = self.save)

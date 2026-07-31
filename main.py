@@ -465,8 +465,7 @@ class Main:
                     # Reset the mode with the corrected boundaries
                     screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
 
-                    Game.SQUARE = min(width * 0.08, height * 0.1)
-                    Game.RADIUS = int(Game.SQUARE * 0.3)
+                    self.game.set_square_size(min(width * 0.08, height * 0.1))
                 
                     
                     # Allow other keydowns to pass through (though we don't handle them)
