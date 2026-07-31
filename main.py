@@ -364,7 +364,6 @@ class Main:
         rect.center = button.center
         screen.blit(buttonText,rect)
 
-
         self.featherRectR.center = (5*self.get_width()/6,self.get_height()/2)
         self.featherRectL.center = (self.get_width()/6,self.get_height()/2)
         screen.blit(self.featherSurfR,self.featherRectR)
@@ -386,6 +385,7 @@ class Main:
         if self.screen == "game":
             self.clickDict = {}
             self.game.draw_board(screen)
+            self.game.label_board(screen,self.byfont)
 
             self.blit_turn(screen)
 
@@ -466,11 +466,20 @@ class Main:
                     screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
 
                     self.game.set_square_size(min(width * 0.08, height * 0.1))
+
+
+                    featherDims = (int(width*0.28125),int(height*0.725))
+                    self.featherSurfR = pygame.transform.scale(self.featherSurfR,featherDims)
+                    self.featherRectR = self.featherSurfR.get_rect()
+
+                    self.featherSurfL = pygame.transform.scale(self.featherSurfL,featherDims)
+                    self.featherRectL = self.featherSurfL.get_rect()
                 
                     
                     # Allow other keydowns to pass through (though we don't handle them)
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if self.screen == "game":
+                        found = False
                         if self.close_timeout is None:
                             mx,my = pygame.mouse.get_pos()
                             sq = self.game.get_square_clicked(mx,my)
@@ -480,15 +489,16 @@ class Main:
                                     successful = self.game.place_piece(self.activePlayerIndex+1,int(x),int(y))
                                     if successful:
                                         self.next_turn()
+                                        found = True
 
-                            else: #look in clickDict
-                                for key in self.clickDict:
-                                    if self.clickDict[key].collidepoint((mx,my)):
-                                        #true
-                                        if key == "toggle":
-                                            self.showLegal = not self.showLegal
+                        if not found:
+                            for key in self.clickDict:
+                                if self.clickDict[key].collidepoint((mx,my)):
+                                    #true
+                                    if key == "toggle":
+                                        self.showLegal = not self.showLegal
 
-                                        break
+                                    break
                     else:
                         mx,my = pygame.mouse.get_pos()
                         for key in self.clickDict:

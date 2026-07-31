@@ -205,7 +205,7 @@ def create_genetic_computer(game,color,checkpoint_path, search_depth=None):
 
 class ComputerDQN(Computer): #incorporates AI model -- use PTH extension
     #formerly known as Computer2
-    PATH = os.getcwd()+"/models/othello_v02_1.0k-sav.pth"
+    PATH = os.getcwd()+"/models/othello_v02_1k.pth"
     def __init__(self,game,color,path=None):
         super().__init__(game,color)
         from computerRL import load_agent
