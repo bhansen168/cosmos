@@ -140,6 +140,24 @@ class Main:
     def get_height(self):
         return pygame.display.get_window_size()[1]
 
+    def draw_home_button(self,screen,x,y,gameOver):
+        rect = pygame.Rect(0,0,120,40)
+        rect.center = (x,y)
+        pygame.draw.rect(screen,Main.GRAY,rect,border_radius=10)
+
+        TEXT = "HOME"
+        if gameOver:
+            TEXT += f" ({int(round(15 - (datetime.now() - self.close_timeout).total_seconds()))})"
+        
+        text = self.font.render(TEXT,True,Main.BLACK)
+        trect = text.get_rect()
+        trect.center = rect.center
+
+        screen.blit(text,trect)
+
+        return rect
+        
+
     def init_feathers(self):
         self.featherSurfR = pygame.Surface((230,435),pygame.SRCALPHA)
         img = pygame.transform.scale(pygame.image.load("quill2b.png"),(226,435))
@@ -231,7 +249,11 @@ class Main:
             
         for i in range(len(texts)):#text in texts:
             surf = self.font.render(texts[i],True,Main.BLACK)
-            screen.blit(surf,(x,y + i * 30))
+            rect = surf.get_rect()
+            rect.centerx = x
+            rect.y = y + i*30
+
+            screen.blit(surf,rect)
 
     def draw_toggle_bar(self,screen,x,y): #center
         RADIUS = 15
@@ -383,12 +405,17 @@ class Main:
     def draw(self,screen):
         if self.screen == "game":
             self.clickDict = {}
-            self.game.draw_board(screen)
+            boardRect = self.game.draw_board(screen)
             self.game.label_board(screen,self.font)#self.byfont)
 
             self.blit_turn(screen)
 
-            self.draw_score(screen,self.get_width()-180,80)
+            boardWend = boardRect.width + boardRect.x
+            sidebar = self.get_width() - boardWend
+
+            self.draw_score(screen,sidebar/2 + boardWend,80)
+
+            gameOver = False
 
             if self.close_timeout is not None:
                 text = self.bigFont.render("GAME OVER",True,Main.PINK)
@@ -397,7 +424,12 @@ class Main:
                 rect.bottom = self.get_height() - 10
                 screen.blit(text,rect)
 
-            self.clickDict["toggle"] = self.draw_toggle_bar(screen,self.get_width()-180,self.get_height()/2)
+                gameOver = True
+
+            
+
+            self.clickDict["toggle"] = self.draw_toggle_bar(screen,sidebar/2 + boardWend,self.get_height()/2)
+            self.clickDict["home"] = self.draw_home_button(screen,sidebar/2 + boardWend,self.get_height()*3/8,gameOver)
 
             if self.showLegal:
                 self.draw_legal(screen)
@@ -496,6 +528,8 @@ class Main:
                                     #true
                                     if key == "toggle":
                                         self.showLegal = not self.showLegal
+                                    elif key == "home":
+                                        self.reset()
 
                                     break
                     else:
@@ -505,6 +539,7 @@ class Main:
                                 #true
                                 if key == "begin":
                                     self.begin_game()
+                                    #print(f"TURN: {('Black' if self.activePlayerIndex+1 == Game.BLACK else 'White')}")
                                 elif key == "color":
                                     self.compColor = (Game.BLACK if self.compColor == Game.WHITE else Game.WHITE)
                                 elif key == "eval_toggle":

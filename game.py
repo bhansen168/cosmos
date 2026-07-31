@@ -144,6 +144,8 @@ class Game:
                     pygame.draw.circle(screen,Game.C_SHADOW,(TX + Game.SQUARE * (x+0.5)+Game.SHADOW_OFFSET * Game.SHADOW_DIRS[0],TY + Game.SQUARE* (y+0.5)+Game.SHADOW_OFFSET * Game.SHADOW_DIRS[1]),Game.RADIUS)
                     pygame.draw.circle(screen,(Game.C_BLACK if self.board[y][x] == Game.BLACK else Game.C_WHITE),(TX + Game.SQUARE * (x+0.5),TY + Game.SQUARE* (y+0.5)),Game.RADIUS)
 
+        return pygame.Rect(TX,TY,Game.SQUARE * self.side,Game.SQUARE * self.side)
+
     def valid(self,x,y):
         return 0 <= y < self.side and 0 <= x < self.side #is on board
 
