@@ -100,7 +100,7 @@ class Game:
         for i in range(self.side):
             text = font.render(HORIZONTAL[i],True,Game.C_BLACK)
             rect = text.get_rect()
-            rect.bottom = TY
+            rect.centery = TY/2
             rect.centerx = TX + (i+0.5) * Game.SQUARE
             screen.blit(text,rect)
 
