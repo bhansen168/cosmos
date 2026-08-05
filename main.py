@@ -145,10 +145,11 @@ class Main:
         rect.center = (x,y)
         pygame.draw.rect(screen,Main.GRAY,rect,border_radius=10)
 
-        if self.mode == "player":
+        if self.mode == "player" or gameOver:
             TEXT = "Home"
         else:
             TEXT = "Resign"
+            
         if gameOver:
             TEXT += f" ({int(round(15 - (datetime.now() - self.close_timeout).total_seconds()))})"
         
